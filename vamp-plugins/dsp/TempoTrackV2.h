@@ -17,8 +17,12 @@
 #ifndef TEMPOTRACKV2_H
 #define TEMPOTRACKV2_H
 
+#if defined(_WIN32) && ! defined(_MSC_VER)
+#include <stdint.h>
+#endif
+
 #include <vector>
-#ifdef __LINUX__
+#ifdef __GNUC__
 #include <stddef.h>  //resolves size_t compile error on Ubuntu 11.10
 #endif
 

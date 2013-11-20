@@ -347,7 +347,7 @@ void WSpinny::updateVinylControlSpeed(double rpm) {
 
 void WSpinny::updateVinylControlSignalEnabled(double enabled) {
     m_bSignalActive = enabled;
-
+#ifdef __VINYLCONTROL__
     if (enabled && m_iVinylInput != -1) {
         m_pVCManager->addSignalQualityListener(this);
     } else {
@@ -355,6 +355,8 @@ void WSpinny::updateVinylControlSignalEnabled(double enabled) {
         // fill with transparent black
         m_qImage.fill(qRgba(0,0,0,0));
     }
+#endif
+  
 }
 
 void WSpinny::updateVinylControlEnabled(double enabled) {
@@ -470,17 +472,21 @@ void WSpinny::showEvent(QShowEvent* event) {
     Q_UNUSED(event);
     // If we want to draw the VC signal on this widget then register for
     // updates.
+#ifdef __VINYLCONTROL__
     if (m_bSignalActive && m_iVinylInput != -1 && m_pVCManager) {
         m_pVCManager->addSignalQualityListener(this);
     }
+#endif  
 }
 
 void WSpinny::hideEvent(QHideEvent* event) {
     Q_UNUSED(event);
+#ifdef __VINYLCONTROL__
     // When we are hidden we do not want signal quality updates.
     if (m_pVCManager) {
         m_pVCManager->removeSignalQualityListener(this);
     }
+#endif
     // fill with transparent black
     m_qImage.fill(qRgba(0,0,0,0));
 }

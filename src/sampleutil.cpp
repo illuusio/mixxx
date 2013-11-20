@@ -3,8 +3,13 @@
 
 #ifdef __WINDOWS__
 #pragma intrinsic(fabs)sc
+
+#if defined(_WIN32) && ! defined(_MSC_VER)
+#include <stdint.h>
+#else
 typedef __int64 int64_t;
 typedef __int32 int32_t;
+#endif
 #endif
 
 #include <QtDebug>

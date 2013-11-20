@@ -33,7 +33,7 @@
  *  made about the suitability of this software for any purpose.  It is 
  *  provided "as is" without express or implied warranty."
  */
-#if (defined (__WINDOWS__))
+#if (defined (__WINDOWS__)) && defined(_MSC_VER)
     #include	<math.h>
     
     #ifdef WIN64
