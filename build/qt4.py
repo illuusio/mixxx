@@ -844,7 +844,7 @@ def generate(env):
     except AttributeError:
         # Looks like we use a pre-0.98 version of SCons...
         from SCons.Script.SConscript import SConsEnvironment
-        SConsEnvironment.EnableQt4Modules = enable_modules
+	SConsEnvironment.EnableQt4Modules = enable_modules
 
 def enable_modules(self, modules, debug=False, crosscompiling=False) :
     import sys
@@ -907,6 +907,7 @@ def enable_modules(self, modules, debug=False, crosscompiling=False) :
         except: pass
     debugSuffix = ''
     if sys.platform in ["darwin", "linux2"] and not crosscompiling :
+        print "We are here gimme as the beer"
         if debug : debugSuffix = '_debug'
         for module in modules :
             if module not in pclessModules : continue
@@ -929,6 +930,7 @@ def enable_modules(self, modules, debug=False, crosscompiling=False) :
             transformedQtdir = transformToWinePath(self['QT4DIR'])
             self['QT4_MOC'] = "QT4DIR=%s %s"%( transformedQtdir, self['QT4_MOC'])
         self.AppendUnique(CPPPATH=[os.path.join("$QT4DIR","include")])
+        print "scons: CROSS 3"
         try: modules.remove("QtDBus")
         except: pass
         if debug : debugSuffix = 'd'

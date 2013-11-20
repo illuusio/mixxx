@@ -431,6 +431,9 @@ class Vamp(Feature):
     def configure(self, build, conf):
         if not self.enabled(build):
             return
+        
+        if build.crosscompile and build.platform_is_windows and build.toolchain_is_gnu:
+            build.env.Append(CPPDEFINES = '__VAMP__')
 
         # If there is no system vamp-hostdk installed, then we'll directly link
         # the vamp-hostsdk.
