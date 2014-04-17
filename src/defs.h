@@ -45,7 +45,7 @@ const int WINDOWSIZE = 2048;
 const int STEPSIZE = 1024; //WINDOWSIZE/2; //WINDOWSIZE/STEPSIZE must result in an integer value
 
 /** Maximum buffer length to each EngineObject::process call */
-const int MAX_BUFFER_LEN = 160000;
+const unsigned int MAX_BUFFER_LEN = 160000;
 
 #ifndef PATH_MAX
 #ifndef MAX_PATH
@@ -63,20 +63,6 @@ enum {
 // static CSAMPLE two_pi = (2.f*acos(-1.f));
 // two_pi has been moved to mathstuff.h clear up the "defs.h:55: warning: ‘two_pi’ defined but not used" it generates for every file including defs.h
 
-// Ensure that CSAMPLE x stays above the intel cpu denormalization range,
-// otherwise sets x equal to 0.
-inline double zap_denormal(double x)
-{
-    // fabs too slow on Windows...
-    double absx;
-    if (x<0)
-        absx = -x;
-    else
-        absx = x;
-
-    return (absx > 1e-15f && absx < 1e15f) ? x : 0.f;
-}
-
 #ifndef math_max
 #define math_max(a,b)            (((a) > (b)) ? (a) : (b))
 #endif
@@ -85,14 +71,8 @@ inline double zap_denormal(double x)
 #define math_min(a,b)            (((a) < (b)) ? (a) : (b))
 #endif
 
-// MSVC 2005/2008 needs these
-#ifndef fmax
-#define fmax math_max
-#endif
-
-#ifndef fmin
-#define fmin math_min
+#ifndef math_clamp
+#define math_clamp(v, min, max)  (((min) < (max)) ? (math_min((max), math_max((v), (min)))) : (math_min((min), math_max((v), (max)))))
 #endif
 
 #endif
-

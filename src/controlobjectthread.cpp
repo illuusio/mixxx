@@ -59,9 +59,28 @@ bool ControlObjectThread::connectValueChanged(
     return connect((QObject*)this, SIGNAL(valueChanged(double)), parent(), method, type);
 }
 
+QString ControlObjectThread::name() const {
+    return m_pControl ? m_pControl->name() : QString();
+}
+
+QString ControlObjectThread::description() const {
+    return m_pControl ? m_pControl->description() : QString();
+}
 
 double ControlObjectThread::get() {
     return m_pControl ? m_pControl->get() : 0.0;
+}
+
+double ControlObjectThread::getParameter() const {
+    return m_pControl ? m_pControl->getParameter() : 0.0;
+}
+
+double ControlObjectThread::getParameterForValue(double value) const {
+    return m_pControl ? m_pControl->getParameterForValue(value) : 0.0;
+}
+
+double ControlObjectThread::getDefault() const {
+    return m_pControl ? m_pControl->defaultValue() : 0.0;
 }
 
 void ControlObjectThread::slotSet(double v) {
@@ -71,6 +90,12 @@ void ControlObjectThread::slotSet(double v) {
 void ControlObjectThread::set(double v) {
     if (m_pControl) {
         m_pControl->set(v, this);
+    }
+}
+
+void ControlObjectThread::setParameter(double p) {
+    if (m_pControl) {
+        m_pControl->setParameter(p, this);
     }
 }
 

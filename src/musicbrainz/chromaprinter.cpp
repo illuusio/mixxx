@@ -1,5 +1,6 @@
-#include <QtCore>
 #include <chromaprint.h>
+
+#include <QtDebug>
 
 #include "musicbrainz/chromaprinter.h"
 #include "soundsourceproxy.h"
@@ -11,11 +12,6 @@ chromaprinter::chromaprinter(QObject* parent)
 
 QString chromaprinter::getFingerPrint(TrackPointer pTrack){
     SoundSourceProxy soundSource(pTrack);
-    return calcFingerPrint(soundSource);
-}
-
-QString chromaprinter::getFingerPrint(QString location){
-    SoundSourceProxy soundSource(location);
     return calcFingerPrint(soundSource);
 }
 

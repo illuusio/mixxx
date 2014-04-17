@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012 Mark Hills <mark@pogo.org.uk>
+ * Copyright (C) 2013 Mark Hills <mark@xwax.org>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -28,6 +28,10 @@
 #include "pitch.h"
 
 #define TIMECODER_CHANNELS 2
+
+#ifdef __cplusplus
+extern "C" {
+#endif // __cplusplus
 
 typedef unsigned int bits_t;
 
@@ -58,6 +62,7 @@ struct timecoder {
     /* Precomputed values */
 
     double dt, zero_alpha;
+    signed int threshold;
 
     /* Pitch information */
 
@@ -83,14 +88,14 @@ struct timecode_def* timecoder_find_definition(const char *name);
 void timecoder_free_lookup(void);
 
 void timecoder_init(struct timecoder *tc, struct timecode_def *def,
-                    double speed, unsigned int sample_rate);
+                    double speed, unsigned int sample_rate, bool phono);
 void timecoder_clear(struct timecoder *tc);
 
 int timecoder_monitor_init(struct timecoder *tc, int size);
 void timecoder_monitor_clear(struct timecoder *tc);
 
 void timecoder_cycle_definition(struct timecoder *tc);
-void timecoder_submit(struct timecoder *tc, const signed short *pcm, size_t npcm);
+void timecoder_submit(struct timecoder *tc, signed short *pcm, size_t npcm);
 signed int timecoder_get_position(struct timecoder *tc, double *when);
 
 /*
@@ -141,5 +146,9 @@ static inline double timecoder_revs_per_sec(struct timecoder *tc)
 {
     return (33.0 + 1.0 / 3) * tc->speed / 60;
 }
+
+#ifdef __cplusplus
+};
+#endif // __cplusplus
 
 #endif

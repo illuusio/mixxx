@@ -2,8 +2,12 @@
 // Created 8/23/2009 by RJ Ryan (rryan@mit.edu)
 
 #include <QItemSelectionModel>
+#include <QMessageBox>
+#include <QTranslator>
+#include <QDir>
 
 #include "library/library.h"
+#include "library/library_preferences.h"
 #include "library/libraryfeature.h"
 #include "library/librarytablemodel.h"
 #include "library/sidebarmodel.h"
@@ -12,6 +16,7 @@
 #include "library/browse/browsefeature.h"
 #include "library/cratefeature.h"
 #include "library/rhythmbox/rhythmboxfeature.h"
+#include "library/banshee/bansheefeature.h"
 #include "library/recording/recordingfeature.h"
 #include "library/itunes/itunesfeature.h"
 #include "library/mixxxlibraryfeature.h"
@@ -20,6 +25,7 @@
 #include "library/traktor/traktorfeature.h"
 #include "library/librarycontrol.h"
 #include "library/setlogfeature.h"
+#include "util/sandbox.h"
 
 #include "widget/wtracktableview.h"
 #include "widget/wlibrary.h"
@@ -38,6 +44,7 @@ Library::Library(QObject* parent, ConfigObject<ConfigValue>* pConfig,
         m_pTrackCollection(new TrackCollection(pConfig)),
         m_pLibraryControl(new LibraryControl),
         m_pRecordingManager(pRecordingManager) {
+    qRegisterMetaType<Library::RemovalType>("Library::RemovalType");
 
     // TODO(rryan) -- turn this construction / adding of features into a static
     // method or something -- CreateDefaultLibrary
@@ -65,6 +72,12 @@ Library::Library(QObject* parent, ConfigObject<ConfigValue>* pConfig,
         pConfig->getValueString(ConfigKey("[Library]","ShowRhythmboxLibrary"),"1").toInt()) {
         addFeature(new RhythmboxFeature(this, m_pTrackCollection));
     }
+    if (pConfig->getValueString(ConfigKey("[Library]","ShowBansheeLibrary"),"1").toInt()) {
+        BansheeFeature::prepareDbPath(pConfig);
+        if (BansheeFeature::isSupported()) {
+            addFeature(new BansheeFeature(this, m_pTrackCollection, pConfig));
+        }
+    }
     if (ITunesFeature::isSupported() &&
         pConfig->getValueString(ConfigKey("[Library]","ShowITunesLibrary"),"1").toInt()) {
         addFeature(new ITunesFeature(this, m_pTrackCollection));
@@ -72,6 +85,18 @@ Library::Library(QObject* parent, ConfigObject<ConfigValue>* pConfig,
     if (TraktorFeature::isSupported() &&
         pConfig->getValueString(ConfigKey("[Library]","ShowTraktorLibrary"),"1").toInt()) {
         addFeature(new TraktorFeature(this, m_pTrackCollection));
+    }
+
+    // On startup we need to check if all of the user's library folders are
+    // accessible to us. If the user is using a database from <1.12.0 with
+    // sandboxing then we will need them to give us permission.
+    QStringList directories = m_pTrackCollection->getDirectoryDAO().getDirs();
+
+    qDebug() << "Checking for access to user's library directories:";
+    foreach (QString directoryPath, directories) {
+        QFileInfo directory(directoryPath);
+        bool hasAccess = Sandbox::askForAccess(directory.canonicalFilePath());
+        qDebug() << "Checking for access to" << directoryPath << ":" << hasAccess;
     }
 }
 
@@ -213,4 +238,90 @@ void Library::slotCreateCrate() {
 void Library::onSkinLoadFinished() {
     // Enable the default selection when a new skin is loaded.
     m_pSidebarModel->activateDefaultSelection();
+}
+
+void Library::slotRequestAddDir(QString dir) {
+    // We only call this method if the user has picked a new directory via a
+    // file dialog. This means the system sandboxer (if we are sandboxed) has
+    // granted us permission to this folder. Create a security bookmark while we
+    // have permission so that we can access the folder on future runs. We need
+    // to canonicalize the path so we first wrap the directory string with a
+    // QDir.
+    QDir directory(dir);
+    Sandbox::createSecurityToken(directory);
+
+    if (!m_pTrackCollection->getDirectoryDAO().addDirectory(dir)) {
+        QMessageBox::information(0, tr("Add Directory to Library"),
+                tr("Could not add the directory to your library. Either this "
+                    "directory is already in your library or you are currently "
+                    "rescanning your library."));
+    }
+    // set at least on directory in the config file so that it will be possible
+    // to downgrade from 1.12
+    if (m_pConfig->getValueString(PREF_LEGACY_LIBRARY_DIR).length() < 1){
+        m_pConfig->set(PREF_LEGACY_LIBRARY_DIR, dir);
+    }
+}
+
+void Library::slotRequestRemoveDir(QString dir, RemovalType removalType) {
+    switch (removalType) {
+        case Library::HideTracks:
+            // Mark all tracks in this directory as deleted but DON'T purge them
+            // in case the user re-adds them manually.
+            m_pTrackCollection->getTrackDAO().markTracksAsMixxxDeleted(dir);
+            break;
+        case Library::PurgeTracks:
+            // The user requested that we purge all metadata.
+            m_pTrackCollection->getTrackDAO().purgeTracks(dir);
+            break;
+        case Library::LeaveTracksUnchanged:
+        default:
+            break;
+
+    }
+
+    // Remove the directory from the directory list.
+    m_pTrackCollection->getDirectoryDAO().removeDirectory(dir);
+
+    // Also update the config file if necessary so that downgrading is still
+    // possible.
+    QString confDir = m_pConfig->getValueString(PREF_LEGACY_LIBRARY_DIR);
+
+    if (QDir(dir) == QDir(confDir)) {
+        QStringList dirList = m_pTrackCollection->getDirectoryDAO().getDirs();
+        if (!dirList.isEmpty()) {
+            m_pConfig->set(PREF_LEGACY_LIBRARY_DIR, dirList.first());
+        } else {
+            // Save empty string so that an old version of mixxx knows it has to
+            // ask for a new directory.
+            m_pConfig->set(PREF_LEGACY_LIBRARY_DIR, QString());
+        }
+    }
+}
+
+void Library::slotRequestRelocateDir(QString oldDir, QString newDir) {
+    // We only call this method if the user has picked a relocated directory via
+    // a file dialog. This means the system sandboxer (if we are sandboxed) has
+    // granted us permission to this folder. Create a security bookmark while we
+    // have permission so that we can access the folder on future runs. We need
+    // to canonicalize the path so we first wrap the directory string with a
+    // QDir.
+    QDir directory(newDir);
+    Sandbox::createSecurityToken(directory);
+
+    QSet<int> movedIds = m_pTrackCollection->getDirectoryDAO().relocateDirectory(oldDir, newDir);
+
+    // Clear cache to that all TIO with the old dir information get updated
+    m_pTrackCollection->getTrackDAO().clearCache();
+    m_pTrackCollection->getTrackDAO().databaseTracksMoved(movedIds, QSet<int>());
+    // also update the config file if necessary so that downgrading is still
+    // possible
+    QString conDir = m_pConfig->getValueString(PREF_LEGACY_LIBRARY_DIR);
+    if (oldDir == conDir) {
+        m_pConfig->set(PREF_LEGACY_LIBRARY_DIR, newDir);
+    }
+}
+
+QStringList Library::getDirs(){
+    return m_pTrackCollection->getDirectoryDAO().getDirs();
 }

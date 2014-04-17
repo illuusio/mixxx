@@ -6,13 +6,16 @@ class WaveformWidgetType {
     enum Type {
         EmptyWaveform = 0,
         SoftwareSimpleWaveform, //TODO
-        SoftwareWaveform, //TODO
-        QtSimpleWaveform, //TODO
+        SoftwareWaveform,
+        QtSimpleWaveform,
         QtWaveform,
         GLSimpleWaveform,
         GLWaveform,
         GLSLWaveform,
         HSVWaveform,
+        GLVSyncTest,
+        RGBWaveform,
+        GLRGBWaveform,
         Count_WaveformwidgetType // Also used as invalid value
     };
 };

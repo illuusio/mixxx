@@ -1,7 +1,7 @@
 	<!--
-	Shade, Skin for Mixxx 1.11.x
+	Shade, Skin for Mixxx 1.12.x
 	www.mixxx.org
-	Copyright (C) 2010-2012 jus <s.brandt@mixxx.org>
+	Copyright (C) 2010-2014 jus <s.brandt@mixxx.org>
 	This file is part of the "Shade" Skin for Mixxx
 	"Shade" is licensed under the Creative Commons Attribution-ShareAlike 3.0 Unported license.
 	http://creativecommons.org/licenses/by-sa/3.0/
@@ -16,7 +16,7 @@
 	Under the following conditions:
 	Attribution - You must attribute the work in the manner specified by the author or licensor
 	(but not in any way that suggests that they endorse you or your use of the work).
-	A attribution should include the following: The name of the author and/or licensor, 
+	A attribution should include the following: The name of the author and/or licensor,
 	the title of the work, the URL that is associated with the work.
 
 	Share Alike - If you alter, transform, or build upon this work, you may distribute
@@ -53,7 +53,7 @@
 	<manifest>
 	<title>Shade1024x600-Netbook</title>
 	<author>jus</author>
-	<version>1.11.0.15</version>
+	<version>1.12.0.01</version>
 	<description>A 2-deck split-waveform skin with 4 samplers.</description>
 	<language>en</language>
 	<license>Creative Commons Attribution, Share-Alike 3.0 Unported</license>
@@ -65,7 +65,7 @@
 		<attribute config_key="[Spinny1],show_spinny">1</attribute>
 		<attribute config_key="[Spinny2],show_spinny">1</attribute>
 		<attribute config_key="[Samplers],show_samplers">0</attribute>
-		<attribute config_key="[Vinylcontrol],show_vinylcontrol">0</attribute>
+		<attribute config_key="[VinylControl],show_vinylcontrol">0</attribute>
 		<attribute config_key="[Microphone],show_microphone">0</attribute>
 		<attribute config_key="[PreviewDeck],show_previewdeck">0</attribute>
 	</attributes>
@@ -858,7 +858,7 @@
                                 <TooltipId>beatsync_beatsync_tempo</TooltipId>
                                 <Style></Style>
                                 <NumberStates>1</NumberStates>
-                                <State>
+        						<State>
                                     <Number>0</Number>
                                     <Pressed>btn_sync_sampler_overdown.png</Pressed>
                                     <Unpressed>btn_sync_sampler.png</Unpressed>
@@ -1372,7 +1372,7 @@
                                 <TooltipId>beatsync_beatsync_tempo</TooltipId>
                                 <Style></Style>
                                 <NumberStates>1</NumberStates>
-                                <State>
+        						<State>
                                     <Number>0</Number>
                                     <Pressed>btn_sync_sampler_overdown.png</Pressed>
                                     <Unpressed>btn_sync_sampler.png</Unpressed>
@@ -1886,7 +1886,7 @@
                                 <TooltipId>beatsync_beatsync_tempo</TooltipId>
                                 <Style></Style>
                                 <NumberStates>1</NumberStates>
-                                <State>
+        						<State>
                                     <Number>0</Number>
                                     <Pressed>btn_sync_sampler_overdown.png</Pressed>
                                     <Unpressed>btn_sync_sampler.png</Unpressed>
@@ -2240,7 +2240,7 @@
 
 				<!--Spacing between treeview and searchbar-->
 				QTreeView { margin: 6px 0px 0px 0px; }
-				
+
 				<!--triangle for closed/opened branches in treeview-->
 				QTreeView { show-decoration-selected: 0;} <!-- Suppresses that selected sidebar items branch indicator shows wrong color when out of focus ; lp:880588-->
 				QTreeView::branch:has-children:!has-siblings:closed,
@@ -2296,7 +2296,7 @@
 													-->
 													<Text>
 														<TooltipId>text</TooltipId>
-														<Style>QLabel { 
+														<Style>QLabel {
 														font: 11px/13px Lucida Grande, Lucida Sans Unicode, Arial, Verdana, sans-serif;
 														background-color: transparent;
 														color: #ACACAC;
@@ -2421,7 +2421,7 @@
 												border-bottom: 1px solid #656565;
 												background: transparent;
 												}
-												</Style>												
+												</Style>
 												<Children>
 												<!--
 												**********************************************
@@ -2438,7 +2438,7 @@
 														<ConfigKey>[PreviewDeck1],PeakIndicator</ConfigKey>
 													</Connection>
 												</StatusLight>
-					
+
 												<!--
 												**********************************************
 												Visual - Volume level display
@@ -2601,7 +2601,7 @@
 						</State>
 						<Pos>160,77</Pos>
 						<Connection>
-							<ConfigKey>[Vinylcontrol],show_vinylcontrol</ConfigKey>
+							<ConfigKey>[VinylControl],show_vinylcontrol</ConfigKey>
 						</Connection>
 					</PushButton>
 
@@ -3569,7 +3569,7 @@
 											</PushButton>
 										</Children>
 										<Connection>
-											<ConfigKey>[Vinylcontrol],show_vinylcontrol</ConfigKey>
+											<ConfigKey>[VinylControl],show_vinylcontrol</ConfigKey>
 											<BindProperty>visible</BindProperty>
 										</Connection>
 									</WidgetGroup>
@@ -4088,23 +4088,35 @@
 
 							<!--
 							****************************************
-							Button- Reverse playback
+							Button- Reverse playback & Censor
 							****************************************
 							-->
 							<PushButton>
 								<TooltipId>reverse</TooltipId>
 								<Style></Style>
-								<NumberStates>1</NumberStates>
+								<NumberStates>2</NumberStates>
+								<LeftClickIsPushButton>true</LeftClickIsPushButton>
+								<RightClickIsPushButton>true</RightClickIsPushButton>
 								<State>
 									<Number>0</Number>
 									<Pressed>btn_reverse1_overdown.png</Pressed>
 									<Unpressed>btn_reverse1.png</Unpressed>
+								</State>
+								<State>
+									<Number>1</Number>
+									<Pressed>btn_reverse1_overdown.png</Pressed>
+									<Unpressed>btn_reverse1_over.png</Unpressed>
 								</State>
 								<Pos>0,21</Pos>
 								<Connection>
 									<ConfigKey>[Channel1],reverse</ConfigKey>
 									<EmitOnPressAndRelease>true</EmitOnPressAndRelease>
 									<ButtonState>LeftButton</ButtonState>
+								</Connection>
+								<Connection>
+									<ConfigKey>[Channel1],reverseroll</ConfigKey>
+									<EmitOnPressAndRelease>true</EmitOnPressAndRelease>
+									<ButtonState>RightButton</ButtonState>
 								</Connection>
 							</PushButton>
 
@@ -4912,7 +4924,7 @@
 											</PushButton>
 										</Children>
 										<Connection>
-											<ConfigKey>[Vinylcontrol],show_vinylcontrol</ConfigKey>
+											<ConfigKey>[VinylControl],show_vinylcontrol</ConfigKey>
 											<BindProperty>visible</BindProperty>
 										</Connection>
 									</WidgetGroup>
@@ -5431,23 +5443,35 @@
 
 							<!--
 							****************************************
-							Button- Reverse playback
+							Button- Reverse playback & Censor
 							****************************************
 							-->
 							<PushButton>
 								<TooltipId>reverse</TooltipId>
 								<Style></Style>
-								<NumberStates>1</NumberStates>
+								<NumberStates>2</NumberStates>
+								<LeftClickIsPushButton>true</LeftClickIsPushButton>
+								<RightClickIsPushButton>true</RightClickIsPushButton>
 								<State>
 									<Number>0</Number>
 									<Pressed>btn_reverse2_overdown.png</Pressed>
 									<Unpressed>btn_reverse2.png</Unpressed>
+								</State>
+								<State>
+									<Number>1</Number>
+									<Pressed>btn_reverse2_overdown.png</Pressed>
+									<Unpressed>btn_reverse2_over.png</Unpressed>
 								</State>
 								<Pos>0,21</Pos>
 								<Connection>
 									<ConfigKey>[Channel2],reverse</ConfigKey>
 									<EmitOnPressAndRelease>true</EmitOnPressAndRelease>
 									<ButtonState>LeftButton</ButtonState>
+								</Connection>
+								<Connection>
+									<ConfigKey>[Channel2],reverseroll</ConfigKey>
+									<EmitOnPressAndRelease>true</EmitOnPressAndRelease>
+									<ButtonState>RightButton</ButtonState>
 								</Connection>
 							</PushButton>
 

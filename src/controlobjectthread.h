@@ -18,11 +18,7 @@
 #ifndef CONTROLOBJECTTHREAD_H
 #define CONTROLOBJECTTHREAD_H
 
-#include <qmutex.h>
-#include <qobject.h>
-#include <qmutex.h>
-#include <qwaitcondition.h>
-#include <QQueue>
+#include <QObject>
 
 #include "configobject.h"
 
@@ -43,6 +39,8 @@ class ControlObjectThread : public QObject {
     bool connectValueChanged(
             const char* method, Qt::ConnectionType type = Qt::AutoConnection );
 
+    QString name() const;
+    QString description() const;
 
     /** Called from update(); */
     void emitValueChanged();
@@ -52,6 +50,17 @@ class ControlObjectThread : public QObject {
 
     // Returns the value of the object. Thread safe, non-blocking.
     virtual double get();
+
+    // Returns the normalized parameter of the object. Thread safe, non-blocking.
+    virtual double getParameter() const;
+
+    // Set the normalized parameter of the object. Thread safe, non-blocking.
+    virtual void setParameter(double p);
+
+    double getParameterForValue(double value) const;
+
+    // Returns the normalized parameter of the object. Thread safe, non-blocking.
+    virtual double getDefault() const;
 
   public slots:
     // Set the control to a new value. Non-blocking.

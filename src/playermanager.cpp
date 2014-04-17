@@ -16,15 +16,18 @@
 #include "library/trackcollection.h"
 #include "engine/enginemaster.h"
 #include "soundmanager.h"
+#include "effects/effectsmanager.h"
 #include "util/stat.h"
 #include "engine/enginedeck.h"
 
 PlayerManager::PlayerManager(ConfigObject<ConfigValue>* pConfig,
                              SoundManager* pSoundManager,
+                             EffectsManager* pEffectsManager,
                              EngineMaster* pEngine) :
         m_mutex(QMutex::Recursive),
         m_pConfig(pConfig),
         m_pSoundManager(pSoundManager),
+        m_pEffectsManager(pEffectsManager),
         m_pEngine(pEngine),
         // NOTE(XXX) LegacySkinParser relies on these controls being COs and
         // not COTMs listening to a CO.
@@ -54,12 +57,12 @@ PlayerManager::PlayerManager(ConfigObject<ConfigValue>* pConfig,
 
     // register the engine's outputs
     m_pSoundManager->registerOutput(AudioOutput(AudioOutput::MASTER),
-            m_pEngine);
+                                    m_pEngine);
     m_pSoundManager->registerOutput(AudioOutput(AudioOutput::HEADPHONES),
-            m_pEngine);
+                                    m_pEngine);
     for (int o = EngineChannel::LEFT; o <= EngineChannel::RIGHT; o++) {
-      m_pSoundManager->registerOutput(AudioOutput(AudioOutput::BUS, 0, o),
-                                      m_pEngine);
+        m_pSoundManager->registerOutput(AudioOutput(AudioOutput::BUS, 0, 0, o),
+                                        m_pEngine);
     }
 }
 
@@ -227,7 +230,8 @@ void PlayerManager::addDeckInner() {
         orientation = EngineChannel::RIGHT;
     }
 
-    Deck* pDeck = new Deck(this, m_pConfig, m_pEngine, orientation, group);
+    Deck* pDeck = new Deck(this, m_pConfig, m_pEngine, m_pEffectsManager,
+                           orientation, group);
     if (m_pAnalyserQueue) {
         connect(pDeck, SIGNAL(newTrackLoaded(TrackPointer)),
                 m_pAnalyserQueue, SLOT(slotAnalyseTrack(TrackPointer)));
@@ -239,12 +243,12 @@ void PlayerManager::addDeckInner() {
 
     // Register the deck output with SoundManager (deck is 0-indexed to SoundManager)
     m_pSoundManager->registerOutput(
-        AudioOutput(AudioOutput::DECK, 0, number-1), m_pEngine);
+        AudioOutput(AudioOutput::DECK, 0, 0, number-1), m_pEngine);
 
     // Register vinyl input signal with deck for passthrough support.
     EngineDeck* pEngineDeck = pDeck->getEngineDeck();
     m_pSoundManager->registerInput(
-        AudioInput(AudioInput::VINYLCONTROL, 0, number-1), pEngineDeck);
+        AudioInput(AudioInput::VINYLCONTROL, 0, 0, number-1), pEngineDeck);
 }
 
 void PlayerManager::addSampler() {
@@ -260,7 +264,8 @@ void PlayerManager::addSamplerInner() {
     // All samplers are in the center
     EngineChannel::ChannelOrientation orientation = EngineChannel::CENTER;
 
-    Sampler* pSampler = new Sampler(this, m_pConfig, m_pEngine, orientation, group);
+    Sampler* pSampler = new Sampler(this, m_pConfig, m_pEngine,
+                                    m_pEffectsManager, orientation, group);
     if (m_pAnalyserQueue) {
         connect(pSampler, SIGNAL(newTrackLoaded(TrackPointer)),
                 m_pAnalyserQueue, SLOT(slotAnalyseTrack(TrackPointer)));
@@ -284,7 +289,9 @@ void PlayerManager::addPreviewDeckInner() {
     // All preview decks are in the center
     EngineChannel::ChannelOrientation orientation = EngineChannel::CENTER;
 
-    PreviewDeck* pPreviewDeck = new PreviewDeck(this, m_pConfig, m_pEngine, orientation, group);
+    PreviewDeck* pPreviewDeck = new PreviewDeck(this, m_pConfig, m_pEngine,
+                                                m_pEffectsManager, orientation,
+                                                group);
     if (m_pAnalyserQueue) {
         connect(pPreviewDeck, SIGNAL(newTrackLoaded(TrackPointer)),
                 m_pAnalyserQueue, SLOT(slotAnalyseTrack(TrackPointer)));
@@ -335,7 +342,7 @@ Sampler* PlayerManager::getSampler(unsigned int sampler) const {
 }
 
 bool PlayerManager::hasVinylInput(int inputnum) const {
-    AudioInput vinyl_input(AudioInput::VINYLCONTROL, 0, inputnum);
+    AudioInput vinyl_input(AudioInput::VINYLCONTROL, 0, 0, inputnum);
     return m_pSoundManager->getConfig().getInputs().values().contains(vinyl_input);
 }
 

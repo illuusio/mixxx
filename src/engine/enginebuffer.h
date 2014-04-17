@@ -18,24 +18,30 @@
 #ifndef ENGINEBUFFER_H
 #define ENGINEBUFFER_H
 
-#include <qapplication.h>
 #include <QMutex>
 #include <QAtomicInt>
+#include <gtest/gtest_prod.h>
 
 #include "defs.h"
 #include "engine/engineobject.h"
 #include "trackinfoobject.h"
 #include "configobject.h"
 #include "rotary.h"
+#include "control/controlvalue.h"
 
 //for the writer
 #ifdef __SCALER_DEBUG__
-#include <QtCore>
+#include <QFile>
+#include <QTextStream>
 #endif
 
+class EngineChannel;
 class EngineControl;
 class BpmControl;
+class KeyControl;
 class RateControl;
+class SyncControl;
+class VinylControlControl;
 class LoopingControl;
 class ClockControl;
 class CueControl;
@@ -43,6 +49,7 @@ class ReadAheadManager;
 class ControlObject;
 class ControlObjectSlave;
 class ControlPushButton;
+class ControlIndicator;
 class ControlObjectThreadMain;
 class ControlBeat;
 class ControlTTRotary;
@@ -52,7 +59,10 @@ class EngineBufferScale;
 class EngineBufferScaleDummy;
 class EngineBufferScaleLinear;
 class EngineBufferScaleST;
+class EngineBufferScaleRubberBand;
+class EngineSync;
 class EngineWorkerScheduler;
+class VisualPlayPosition;
 class EngineMaster;
 
 struct Hint;
@@ -67,10 +77,10 @@ const int audioBeatMarkLen = 40;
 // Temporary buffer length
 const int kiTempLength = 200000;
 
-// Rate at which the playpos slider is updated (using a sample rate of 44100 Hz):
-const int kiUpdateRate = 10;
+// Rate at which the playpos slider is updated
+const int kiPlaypositionUpdateRate = 10; // updates per second
 // Number of kiUpdateRates that go by before we update BPM.
-const int kiBpmUpdateRate = 40 / kiUpdateRate; //about 2.5 updates per sec
+const int kiBpmUpdateCnt = 4; // about 2.5 updates per sec
 
 // End of track mode constants
 const int TRACK_END_MODE_STOP = 0;
@@ -84,12 +94,19 @@ const int ENGINE_RAMP_UP = 1;
 
 //const int kiRampLength = 3;
 
-class EngineBuffer : public EngineObject
-{
+class EngineBuffer : public EngineObject {
      Q_OBJECT
-public:
-    EngineBuffer(const char *_group, ConfigObject<ConfigValue> *_config);
-    ~EngineBuffer();
+  public:
+    enum SeekRequest {
+        NO_SEEK,
+        SEEK_STANDARD,
+        SEEK_EXACT,
+        SEEK_PHASE
+    };
+
+    EngineBuffer(const char* _group, ConfigObject<ConfigValue>* _config,
+                 EngineChannel* pChannel, EngineMaster* pMixingEngine);
+    virtual ~EngineBuffer();
     bool getPitchIndpTimeStretch(void);
 
     void bindWorkers(EngineWorkerScheduler* pWorkerScheduler);
@@ -103,23 +120,33 @@ public:
     double getBpm();
     // Returns the BPM of the loaded track (not thread-safe)
     double getFileBpm();
-    /** Sets pointer to other engine buffer/channel */
+    // Sets pointer to other engine buffer/channel
     void setEngineMaster(EngineMaster*);
 
-    void queueNewPlaypos(double newpos);
+    void queueNewPlaypos(double newpos, enum SeekRequest seekType);
+    void requestSyncPhase();
 
-    /** Reset buffer playpos and set file playpos. This must only be called
-      * while holding the pause mutex */
-    void setNewPlaypos(double playpos);
-
-    void process(const CSAMPLE *pIn, const CSAMPLE *pOut, const int iBufferSize);
+    // The process methods all run in the audio callback.
+    void process(const CSAMPLE* pIn, CSAMPLE* pOut, const int iBufferSize);
+    void processSlip(int iBufferSize);
 
     const char* getGroup();
     bool isTrackLoaded();
     TrackPointer getLoadedTrack() const;
 
+    double getVisualPlayPos();
+    double getTrackSamples();
+
+    void collectFeatures(GroupFeatureState* pGroupFeatures) const;
+
     // For dependency injection of readers.
     //void setReader(CachingReader* pReader);
+
+    // For dependency injection of scalers.
+    void setScalerForTest(EngineBufferScale* pScale);
+
+    // For dependency injection of fake tracks.
+    TrackPointer loadFakeTrack();
 
   public slots:
     void slotControlPlayRequest(double);
@@ -130,6 +157,7 @@ public:
     void slotControlEnd(double);
     void slotControlSeek(double);
     void slotControlSeekAbs(double);
+    void slotControlSeekExact(double);
     void slotControlSlip(double);
 
     // Request that the EngineBuffer load a track. Since the process is
@@ -150,9 +178,11 @@ public:
                          int iSampleRate, int iNumSamples);
     void slotTrackLoadFailed(TrackPointer pTrack,
                              QString reason);
+    // Fired when passthrough mode is enabled or disabled.
+    void slotPassthroughChanged(double v);
 
-private:
-    void setPitchIndpTimeStretch(bool b);
+  private:
+    void enablePitchAndTimeScaling(bool bEnable);
 
     void updateIndicators(double rate, int iBufferSize);
 
@@ -162,6 +192,18 @@ private:
 
     double fractionalPlayposFromAbsolute(double absolutePlaypos);
 
+    void doSeek(double change, enum SeekRequest seekType);
+
+    void clearScale();
+
+    // Reset buffer playpos and set file playpos.
+    void setNewPlaypos(double playpos);
+
+    void processSeek();
+
+    double updateIndicatorsAndModifyPlay(double v);
+    void verifyPlay();
+
     // Lock for modifying local engine variables that are not thread safe, such
     // as m_engineControls and m_hintList
     QMutex m_engineLock;
@@ -170,19 +212,16 @@ private:
     const char* m_group;
     ConfigObject<ConfigValue>* m_pConfig;
 
-    // Pointer to the loop control object
     LoopingControl* m_pLoopingControl;
-
-    // Pointer to the rate control object
+    FRIEND_TEST(LoopingControlTest, LoopHalveButton_HalvesLoop);
+    FRIEND_TEST(LoopingControlTest, LoopMoveTest);
+    EngineSync* m_pEngineSync;
+    SyncControl* m_pSyncControl;
+    VinylControlControl* m_pVinylControlControl;
     RateControl* m_pRateControl;
-
-    // Pointer to the BPM control object
     BpmControl* m_pBpmControl;
-
-    // Pointer to the clock control object
+    KeyControl* m_pKeyControl;
     ClockControl* m_pClockControl;
-
-    // Pointer to the cue control object
     CueControl* m_pCueControl;
 
     QList<EngineControl*> m_engineControls;
@@ -196,18 +235,34 @@ private:
     // List of hints to provide to the CachingReader
     QVector<Hint> m_hintList;
 
-    /** The current sample to play in the file. */
+    // The current sample to play in the file.
     double m_filepos_play;
-    /** Copy of rate_exchange, used to check if rate needs to be updated */
+
+    // The previous callback's speed. Used to check if the scaler parameters
+    // need updating.
+    double m_speed_old;
+
+    // The previous callback's pitch. Used to check if the scaler parameters
+    // need updating.
+    double m_pitch_old;
+
+    // The previous callback's baserate. Used to check if the scaler parameters
+    // need updating.
+    double m_baserate_old;
+
+    // Copy of rate_exchange, used to check if rate needs to be updated
     double m_rate_old;
-    /** Copy of length of file */
+
+    // Copy of length of file
     long int m_file_length_old;
-    /** Copy of file sample rate*/
+
+    // Copy of file sample rate
     int m_file_srate_old;
-    /** Mutex controlling weather the process function is in pause mode. This happens
-      * during seek and loading of a new track */
+
+    // Mutex controlling weather the process function is in pause mode. This happens
+    // during seek and loading of a new track
     QMutex m_pause;
-    /** Used in update of playpos slider */
+    // Used in update of playpos slider
     int m_iSamplesCalculated;
     int m_iUiSlowTick;
 
@@ -217,6 +272,8 @@ private:
     double m_dSlipRate;
     // Slip Status
     bool m_bSlipEnabled;
+    bool m_bSlipToggled;
+
 
     ControlObject* m_pTrackSamples;
     ControlObject* m_pTrackSampleRate;
@@ -229,52 +286,46 @@ private:
     ControlObject* m_fwdButton;
     ControlObject* m_backButton;
     ControlPushButton* m_pSlipButton;
-    ControlObject* m_pSlipPosition;
 
     ControlObject* m_rateEngine;
     ControlObject* m_visualBpm;
+    ControlObject* m_visualKey;
+    ControlObject* m_pQuantize;
     ControlObject* m_pMasterRate;
     ControlPotmeter* m_playposSlider;
-    ControlPotmeter* m_visualPlaypos;
     ControlObjectSlave* m_pSampleRate;
     ControlPushButton* m_pKeylock;
+    QScopedPointer<ControlObjectSlave> m_pPassthroughEnabled;
 
     ControlPushButton* m_pEject;
 
     // Whether or not to repeat the track when at the end
     ControlPushButton* m_pRepeat;
 
-    ControlObject* m_pVinylStatus;  //Status of vinyl control
-    ControlObject* m_pVinylSeek;
-
-    /** Fwd and back controls, start and end of track control */
+    // Fwd and back controls, start and end of track control
     ControlPushButton* m_startButton;
     ControlPushButton* m_endButton;
 
-    /** Object used to perform waveform scaling (sample rate conversion) */
+    // Object used to perform waveform scaling (sample rate conversion)
     EngineBufferScale* m_pScale;
-    /** Object used for linear interpolation scaling of the audio */
+    // Object used for linear interpolation scaling of the audio
     EngineBufferScaleLinear* m_pScaleLinear;
-    /** Object used for pitch-indep time stretch (key lock) scaling of the audio */
+    // Object used for pitch-indep time stretch (key lock) scaling of the audio
     EngineBufferScaleST* m_pScaleST;
+    EngineBufferScaleRubberBand* m_pScaleRB;
     EngineBufferScaleDummy* m_pScaleDummy;
     // Indicates whether the scaler has changed since the last process()
     bool m_bScalerChanged;
+    // Indicates that dependency injection has taken place.
+    bool m_bScalerOverride;
 
-    QAtomicInt m_bSeekQueued;
-    // TODO(XXX) make a macro or something.
-#if defined(__GNUC__)
-    double m_dQueuedPosition __attribute__ ((aligned(sizeof(double))));
-#elif defined(_MSC_VER)
-    double __declspec(align(8)) m_dQueuedPosition;
-#else
-    double m_dQueuedPosition;
-#endif
+    QAtomicInt m_iSeekQueued;
+    ControlValueAtomic<double> m_queuedPosition;
 
-    /** Holds the last sample value of the previous buffer. This is used when ramping to
-      * zero in case of an immediate stop of the playback */
+    // Holds the last sample value of the previous buffer. This is used when ramping to
+    // zero in case of an immediate stop of the playback
     float m_fLastSampleValue[2];
-    /** Is true if the previous buffer was silent due to pausing */
+    // Is true if the previous buffer was silent due to pausing
     bool m_bLastBufferPaused;
     QAtomicInt m_iTrackLoading;
     bool m_bPlayAfterLoading;
@@ -292,6 +343,8 @@ private:
     CSAMPLE* m_pCrossFadeBuffer;
     int m_iCrossFadeSamples;
     int m_iLastBufferSize;
+
+    QSharedPointer<VisualPlayPosition> m_visualPlayPos;
 };
 
 #endif

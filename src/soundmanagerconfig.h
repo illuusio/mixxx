@@ -20,7 +20,9 @@
 #define SOUNDMANAGERCONFIG_FILENAME "soundconfig.xml"
 #endif
 
-#include <QtCore>
+#include <QString>
+#include <QMultiHash>
+#include <QFileInfo>
 
 #include "soundmanagerutil.h"
 
@@ -39,9 +41,11 @@ public:
     static const QString kDefaultAPI;
     static const unsigned int kFallbackSampleRate;
     static const int kDefaultAudioBufferSizeIndex;
+    static const int kDefaultSyncBuffers;
 
     SoundManagerConfig();
     ~SoundManagerConfig();
+
     bool readFromDisk();
     bool writeToDisk() const;
     QString getAPI() const;
@@ -53,6 +57,8 @@ public:
     unsigned int getAudioBufferSizeIndex() const;
     unsigned int getFramesPerBuffer() const;
     void setAudioBufferSizeIndex(unsigned int latency);
+    unsigned int getSyncBuffers() const;
+    void setSyncBuffers(unsigned int sampleRate);
     void addOutput(const QString &device, const AudioOutput &out);
     void addInput(const QString &device, const AudioInput &in);
     QMultiHash<QString, AudioOutput> getOutputs() const;
@@ -74,6 +80,7 @@ private:
     // latency as milliseconds or frames per buffer is bad because those
     // values vary with sample rate) -- bkgood
     unsigned int m_audioBufferSizeIndex;
+    unsigned int m_syncBuffers;
     QMultiHash<QString, AudioOutput> m_outputs;
     QMultiHash<QString, AudioInput> m_inputs;
 };

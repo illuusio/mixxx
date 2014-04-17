@@ -3,18 +3,15 @@
 #include "waveformwidgetrenderer.h"
 #include "waveform/waveform.h"
 #include "waveform/waveformwidgetfactory.h"
-
+#include "controlobjectthread.h"
 #include "widget/wskincolor.h"
 #include "trackinfoobject.h"
 #include "widget/wwidget.h"
-
 #include "defs.h"
-
-#include "controlobjectthreadmain.h"
 
 WaveformRendererFilteredSignal::WaveformRendererFilteredSignal(
         WaveformWidgetRenderer* waveformWidgetRenderer)
-    : WaveformRendererSignalBase( waveformWidgetRenderer) {
+    : WaveformRendererSignalBase(waveformWidgetRenderer) {
 }
 
 WaveformRendererFilteredSignal::~WaveformRendererFilteredSignal() {
@@ -91,7 +88,7 @@ void WaveformRendererFilteredSignal::draw(QPainter* painter,
 
     //draw reference line
     if (m_alignment == Qt::AlignCenter) {
-        painter->setPen(m_axesColor);
+        painter->setPen(m_pColors->getAxesColor());
         painter->drawLine(0,halfHeight,m_waveformRenderer->getWidth(),halfHeight);
     }
 

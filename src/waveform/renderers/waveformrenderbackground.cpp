@@ -13,9 +13,16 @@ WaveformRenderBackground::WaveformRenderBackground(
 WaveformRenderBackground::~WaveformRenderBackground() {
 }
 
-void WaveformRenderBackground::setup(const QDomNode& node) {
+void WaveformRenderBackground::setup(const QDomNode& node,
+                                     const SkinContext& context) {
     m_backgroundColor = m_waveformRenderer->getWaveformSignalColors()->getBgColor();
-    m_backgroundPixmapPath = WWidget::selectNodeQString(node, "BgPixmap");
+    m_backgroundPixmapPath = context.selectString(node, "BgPixmap");
+    if (m_backgroundPixmapPath.isEmpty()) {
+        qWarning() << "WaveformRenderBackground::generatePixmap - no background file";
+        m_backgroundPixmapPath = QString();
+    } else {
+        m_backgroundPixmapPath = context.getSkinPath(m_backgroundPixmapPath);
+    }
     setDirty(true);
 }
 
@@ -23,6 +30,14 @@ void WaveformRenderBackground::draw(QPainter* painter,
                                     QPaintEvent* /*event*/) {
     if (isDirty()) {
         generateImage();
+    }
+
+    // If there is no background image, just fill the painter with the
+    // background color.
+    if (m_backgroundImage.isNull()) {
+        painter->fillRect(0, 0, m_waveformRenderer->getWidth(),
+                          m_waveformRenderer->getHeight(), m_backgroundColor);
+        return;
     }
 
     // since we use opaque widget we need to draw the background !
@@ -34,45 +49,24 @@ void WaveformRenderBackground::draw(QPainter* painter,
 }
 
 void WaveformRenderBackground::generateImage() {
-    if (m_backgroundPixmapPath != "") {
-        QImage backgroundImage(WWidget::getPath(m_backgroundPixmapPath));
+    m_backgroundImage = QImage();
+    if (!m_backgroundPixmapPath.isEmpty()) {
+        QImage backgroundImage(m_backgroundPixmapPath);
 
-        if (!backgroundImage.isNull()){
+        if (!backgroundImage.isNull()) {
             if (backgroundImage.width() == m_waveformRenderer->getWidth() &&
                     backgroundImage.height() == m_waveformRenderer->getHeight()) {
                 m_backgroundImage = backgroundImage.convertToFormat(QImage::Format_RGB32);
             } else {
-                qWarning() << "WaveformRenderBackground::generateImage() - file("
-                           << WWidget::getPath(m_backgroundPixmapPath)
-                           << ")" << backgroundImage.width()
-                           << "x" << backgroundImage.height()
-                           << "do not fit the waveform widget size"
-                           << m_waveformRenderer->getWidth()
-                           << "x" << m_waveformRenderer->getHeight();
-
                 m_backgroundImage = QImage(m_waveformRenderer->getWidth(),
-                                             m_waveformRenderer->getHeight(),
-                                             QImage::Format_RGB32);
+                                           m_waveformRenderer->getHeight(),
+                                           QImage::Format_RGB32);
                 QPainter painter(&m_backgroundImage);
                 painter.setRenderHint(QPainter::SmoothPixmapTransform);
                 painter.drawImage(m_backgroundImage.rect(),
-                                   backgroundImage, backgroundImage.rect());
+                                  backgroundImage, backgroundImage.rect());
             }
-        } else {
-            qWarning() << "WaveformRenderBackground::generatePixmap - file("
-                       << WWidget::getPath(m_backgroundPixmapPath)
-                       << ") is not valid ...";
-            m_backgroundImage = QImage(m_waveformRenderer->getWidth(),
-                                         m_waveformRenderer->getHeight(),
-                                         QImage::Format_RGB32);
-            m_backgroundImage.fill(m_backgroundColor.rgb());
         }
-    } else {
-        qWarning() << "WaveformRenderBackground::generatePixmap - no background file";
-        m_backgroundImage = QImage(m_waveformRenderer->getWidth(),
-                                     m_waveformRenderer->getHeight(),
-                                     QImage::Format_RGB32);
-        m_backgroundImage.fill(m_backgroundColor.rgb());
     }
     setDirty(false);
 }

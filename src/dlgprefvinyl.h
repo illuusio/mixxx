@@ -23,9 +23,9 @@
 #include "ui_dlgprefvinyldlg.h"
 #include "configobject.h"
 #include "vinylcontrol/vinylcontrolsignalwidget.h"
-#include "controlobjectthreadmain.h"
 #include "preferences/dlgpreferencepage.h"
 
+class ControlObjectSlave;
 class VinylControlManager;
 
 class DlgPrefVinyl : public DlgPreferencePage, Ui::DlgPrefVinylDlg  {
@@ -37,19 +37,30 @@ class DlgPrefVinyl : public DlgPreferencePage, Ui::DlgPrefVinylDlg  {
   public slots:
     void slotUpdate();
     void slotApply();
+    void slotResetToDefaults();
+
     void slotHide();
     void slotShow();
     void VinylTypeSlotApply();
     void VinylGainSlotApply();
 
+  private slots:
+    void slotNumDecksChanged(double);
+
   private:
-    VinylControlSignalWidget m_signalWidget1;
-    VinylControlSignalWidget m_signalWidget2;
+    void setDeckWidgetsVisible(int deck, bool visible);
+    void setDeck1WidgetsVisible(bool visible);
+    void setDeck2WidgetsVisible(bool visible);
+    void setDeck3WidgetsVisible(bool visible);
+    void setDeck4WidgetsVisible(bool visible);
+
+    QList<VinylControlSignalWidget*> m_signalWidgets;
 
     VinylControlManager* m_pVCManager;
     ConfigObject<ConfigValue>* config;
-    ControlObjectThread m_COSpeed1;
-    ControlObjectThread m_COSpeed2;
+    QList<ControlObjectSlave*> m_COSpeeds;
+    ControlObjectSlave* m_pNumDecks;
+    int m_iConfiguredDecks;
 };
 
 #endif

@@ -1,6 +1,6 @@
 /**
   * @file hidcontroller.h
-  * @author Sean M. Pappalardo	spappalardo@mixxx.org
+  * @author Sean M. Pappalardo  spappalardo@mixxx.org
   * @date Sun May 1 2011
   * @brief HID controller backend
   */
@@ -59,6 +59,12 @@ class HidController : public Controller {
 
     virtual void visit(const MidiControllerPreset* preset);
     virtual void visit(const HidControllerPreset* preset);
+
+    virtual void accept(ControllerVisitor* visitor) {
+        if (visitor) {
+            visitor->visit(this);
+        }
+    }
 
     virtual bool isMappable() const {
         return m_preset.isMappable();

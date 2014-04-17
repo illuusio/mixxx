@@ -31,6 +31,7 @@
 #include "library/dao/cuedao.h"
 #include "library/dao/playlistdao.h"
 #include "library/dao/analysisdao.h"
+#include "library/dao/directorydao.h"
 
 class TrackInfoObject;
 
@@ -49,36 +50,29 @@ class TrackCollection : public QObject
     ~TrackCollection();
     bool checkForTables();
 
-    /** Import the files in a given diretory, without recursing into subdirectories */
-    bool importDirectory(const QString &directory, TrackDAO &trackDao,
-                         const QStringList & nameFilters, volatile bool* cancel);
-
     void resetLibaryCancellation();
     QSqlDatabase& getDatabase();
 
     CrateDAO& getCrateDAO();
     TrackDAO& getTrackDAO();
     PlaylistDAO& getPlaylistDAO();
-    QSharedPointer<BaseTrackCache> getTrackSource(const QString& name);
-    void addTrackSource(const QString& name, QSharedPointer<BaseTrackCache> trackSource);
+    DirectoryDAO& getDirectoryDAO();
+    QSharedPointer<BaseTrackCache> getTrackSource();
+    void setTrackSource(QSharedPointer<BaseTrackCache> trackSource);
     void cancelLibraryScan();
 
     ConfigObject<ConfigValue>* getConfig() {
         return m_pConfig;
     }
 
-  signals:
-    void startedLoading();
-    void progressLoading(QString path);
-    void finishedLoading();
-
   private:
     ConfigObject<ConfigValue>* m_pConfig;
     QSqlDatabase m_db;
-    QHash<QString, QSharedPointer<BaseTrackCache> > m_trackSources;
+    QSharedPointer<BaseTrackCache> m_defaultTrackSource;
     PlaylistDAO m_playlistDao;
     CrateDAO m_crateDao;
     CueDAO m_cueDao;
+    DirectoryDAO m_directoryDao;
     AnalysisDao m_analysisDao;
     TrackDAO m_trackDao;
     const QRegExp m_supportedFileExtensionsRegex;

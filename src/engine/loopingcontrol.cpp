@@ -3,25 +3,45 @@
 // Author: asantoni, rryan
 
 #include <QtDebug>
-#include <QObject>
 
 #include "controlobject.h"
 #include "configobject.h"
 #include "controlpushbutton.h"
 #include "cachingreader.h"
 #include "engine/loopingcontrol.h"
+#include "engine/bpmcontrol.h"
 #include "engine/enginecontrol.h"
 #include "mathstuff.h"
 
 #include "trackinfoobject.h"
 #include "track/beats.h"
 
-double LoopingControl::s_dBeatSizes[] = { 0.03125, 0.0625, 0.125, 0.25, 0.5, 1, 2, 4, 8, 16, 32, 64, };
+double LoopingControl::s_dBeatSizes[] = { 0.03125, 0.0625, 0.125, 0.25, 0.5,
+                                          1, 2, 4, 8, 16, 32, 64 };
 
-LoopingControl::LoopingControl(const char * _group,
-                               ConfigObject<ConfigValue> * _config)
+// Used to generate the beatloop_%SIZE, beatjump_%SIZE, and loop_move_%SIZE CO
+// ConfigKeys.
+ConfigKey keyForControl(const char* pGroup, QString ctrlName, double num) {
+    ConfigKey key;
+    key.group = pGroup;
+    key.item = ctrlName.arg(num);
+    return key;
+}
+
+// static
+QList<double> LoopingControl::getBeatSizes() {
+    QList<double> result;
+    for (unsigned int i = 0; i < (sizeof(s_dBeatSizes) / sizeof(s_dBeatSizes[0])); ++i) {
+        result.append(s_dBeatSizes[i]);
+    }
+    return result;
+}
+
+LoopingControl::LoopingControl(const char* _group,
+                               ConfigObject<ConfigValue>* _config)
         : EngineControl(_group, _config) {
     m_bLoopingEnabled = false;
+    m_bLoopRollActive = false;
     m_iLoopStartSample = kNoTrigger;
     m_iLoopEndSample = kNoTrigger;
     m_iCurrentSample = 0.;
@@ -53,7 +73,7 @@ LoopingControl::LoopingControl(const char * _group,
     m_pReloopExitButton->set(0);
 
     m_pCOLoopEnabled = new ControlObject(ConfigKey(_group, "loop_enabled"));
-    m_pCOLoopEnabled->set(0.0f);
+    m_pCOLoopEnabled->set(0.0);
 
     m_pCOLoopStartPosition =
             new ControlObject(ConfigKey(_group, "loop_start_position"));
@@ -72,13 +92,13 @@ LoopingControl::LoopingControl(const char * _group,
     m_pQuantizeEnabled = ControlObject::getControl(ConfigKey(_group, "quantize"));
     m_pNextBeat = ControlObject::getControl(ConfigKey(_group, "beat_next"));
     m_pClosestBeat = ControlObject::getControl(ConfigKey(_group, "beat_closest"));
-    m_pTrackSamples = ControlObject::getControl(ConfigKey(_group,"track_samples"));
-    m_pSlipEnabled = ControlObject::getControl(ConfigKey(_group,"slip_enabled"));
+    m_pTrackSamples = ControlObject::getControl(ConfigKey(_group, "track_samples"));
+    m_pSlipEnabled = ControlObject::getControl(ConfigKey(_group, "slip_enabled"));
 
     // Connect beatloop, which can flexibly handle different values.
     // Using this CO directly is meant to be used internally and by scripts,
     // or anything else that can pass in arbitrary values.
-    m_pCOBeatLoop = new ControlPushButton(ConfigKey(_group, "beatloop"));
+    m_pCOBeatLoop = new ControlObject(ConfigKey(_group, "beatloop"), false);
     connect(m_pCOBeatLoop, SIGNAL(valueChanged(double)), this,
             SLOT(slotBeatLoop(double)), Qt::DirectConnection);
 
@@ -102,7 +122,35 @@ LoopingControl::LoopingControl(const char * _group,
         m_beatLoops.append(pBeatLoop);
     }
 
-    m_pCOLoopScale = new ControlObject(ConfigKey(_group, "loop_scale"));
+    m_pCOBeatJump = new ControlObject(ConfigKey(_group, "beatjump"), false);
+    connect(m_pCOBeatJump, SIGNAL(valueChanged(double)),
+            this, SLOT(slotBeatJump(double)), Qt::DirectConnection);
+
+    // Create beatjump_(SIZE) CO's which all call beatjump, but with a set
+    // value.
+    for (unsigned int i = 0; i < (sizeof(s_dBeatSizes) / sizeof(s_dBeatSizes[0])); ++i) {
+        BeatJumpControl* pBeatJump = new BeatJumpControl(_group, s_dBeatSizes[i]);
+        connect(pBeatJump, SIGNAL(beatJump(double)),
+                this, SLOT(slotBeatJump(double)),
+                Qt::DirectConnection);
+        m_beatJumps.append(pBeatJump);
+    }
+
+    m_pCOLoopMove = new ControlObject(ConfigKey(_group, "loop_move"), false);
+    connect(m_pCOLoopMove, SIGNAL(valueChanged(double)),
+            this, SLOT(slotLoopMove(double)), Qt::DirectConnection);
+
+    // Create loop_move_(SIZE) CO's which all call loop_move, but with a set
+    // value.
+    for (unsigned int i = 0; i < (sizeof(s_dBeatSizes) / sizeof(s_dBeatSizes[0])); ++i) {
+        LoopMoveControl* pLoopMove = new LoopMoveControl(_group, s_dBeatSizes[i]);
+        connect(pLoopMove, SIGNAL(loopMove(double)),
+                this, SLOT(slotLoopMove(double)),
+                Qt::DirectConnection);
+        m_loopMoves.append(pLoopMove);
+    }
+
+    m_pCOLoopScale = new ControlObject(ConfigKey(_group, "loop_scale"), false);
     connect(m_pCOLoopScale, SIGNAL(valueChanged(double)),
             this, SLOT(slotLoopScale(double)));
     m_pLoopHalveButton = new ControlPushButton(ConfigKey(_group, "loop_halve"));
@@ -124,16 +172,29 @@ LoopingControl::~LoopingControl() {
     delete m_pCOLoopScale;
     delete m_pLoopHalveButton;
     delete m_pLoopDoubleButton;
-    delete m_pCOBeatLoop;
 
-    while (m_beatLoops.size() > 0) {
+    delete m_pCOBeatLoop;
+    while (!m_beatLoops.isEmpty()) {
         BeatLoopingControl* pBeatLoop = m_beatLoops.takeLast();
         delete pBeatLoop;
+    }
+
+    delete m_pCOBeatJump;
+    while (!m_beatJumps.isEmpty()) {
+        BeatJumpControl* pBeatJump = m_beatJumps.takeLast();
+        delete pBeatJump;
+    }
+
+    delete m_pCOLoopMove;
+    while (!m_loopMoves.isEmpty()) {
+        LoopMoveControl* pLoopMove = m_loopMoves.takeLast();
+        delete pLoopMove;
     }
 }
 
 void LoopingControl::slotLoopScale(double scale) {
     int loop_length = m_iLoopEndSample - m_iLoopStartSample;
+    int old_loop_end = m_iLoopEndSample;
     int samples = m_pTrackSamples->get();
     loop_length *= scale;
 
@@ -167,6 +228,13 @@ void LoopingControl::slotLoopScale(double scale) {
 
     // Update CO for loop end marker
     m_pCOLoopEndPosition->set(m_iLoopEndSample);
+
+    // Reseek if the loop shrank out from under the playposition.
+    if (scale < 1.0) {
+        seekInsideAdjustedLoop(
+                m_iLoopStartSample, old_loop_end,
+                m_iLoopStartSample, m_iLoopEndSample);
+    }
 }
 
 void LoopingControl::slotLoopHalve(double v) {
@@ -177,7 +245,15 @@ void LoopingControl::slotLoopHalve(double v) {
             int active_index = m_beatLoops.indexOf(m_pActiveBeatLoop);
             if (active_index - 1 >= 0) {
                 if (m_bLoopingEnabled) {
+                    // If the current position is outside the range of the new loop,
+                    // take the current position and subtract the length of the new loop until
+                    // it fits.
+                    int old_loop_in = m_iLoopStartSample;
+                    int old_loop_out = m_iLoopEndSample;
                     slotBeatLoopActivate(m_beatLoops[active_index - 1]);
+                    seekInsideAdjustedLoop(
+                            old_loop_in, old_loop_out,
+                            m_iLoopStartSample, m_iLoopEndSample);
                 } else {
                     // Calling scale clears the active beatloop.
                     slotLoopScale(0.5);
@@ -191,7 +267,7 @@ void LoopingControl::slotLoopHalve(double v) {
 }
 
 void LoopingControl::slotLoopDouble(double v) {
-    if (v > 0.0f) {
+    if (v > 0.0) {
         // If a beatloop is active then double should deactive the current
         // beatloop and activate the next one.
         if (m_pActiveBeatLoop != NULL) {
@@ -418,6 +494,11 @@ void LoopingControl::slotReloopExit(double val) {
     if (val) {
         // If we're looping, stop looping
         if (m_bLoopingEnabled) {
+            // If loop roll was active, also disable slip.
+            if (m_bLoopRollActive) {
+                m_pSlipEnabled->set(0);
+                m_bLoopRollActive = false;
+            }
             setLoopingEnabled(false);
             //qDebug() << "reloop_exit looping off";
         } else {
@@ -449,7 +530,7 @@ void LoopingControl::slotLoopStartPos(double pos) {
 
     clearActiveBeatLoop();
 
-    if (pos == -1.0f) {
+    if (pos == -1.0) {
         setLoopingEnabled(false);
     }
 
@@ -489,7 +570,7 @@ void LoopingControl::slotLoopEndPos(double pos) {
 
     clearActiveBeatLoop();
 
-    if (pos == -1.0f) {
+    if (pos == -1.0) {
         setLoopingEnabled(false);
     }
     m_iLoopEndSample = newpos;
@@ -554,12 +635,11 @@ void LoopingControl::slotBeatLoopActivate(BeatLoopingControl* pBeatLoopControl) 
         return;
     }
 
-    // Maintain the current start point if there is an active beat loop and we
-    // are currently looping. slotBeatLoop will update m_pActiveBeatLoop if
-    // applicable
-    bool beatLoopAlreadyActive = m_pActiveBeatLoop != NULL;
-    slotBeatLoop(pBeatLoopControl->getSize(),
-                 beatLoopAlreadyActive && m_bLoopingEnabled);
+    // Maintain the current start point if there is an active loop currently
+    // looping. slotBeatLoop will update m_pActiveBeatLoop if applicable. Note,
+    // this used to only maintain the current start point if a beatloop was
+    // enabled. See Bug #1159243.
+    slotBeatLoop(pBeatLoopControl->getSize(), m_bLoopingEnabled);
 }
 
 void LoopingControl::slotBeatLoopActivateRoll(BeatLoopingControl* pBeatLoopControl) {
@@ -567,9 +647,10 @@ void LoopingControl::slotBeatLoopActivateRoll(BeatLoopingControl* pBeatLoopContr
          return;
      }
 
-    //Disregard existing loops
+    // Disregard existing loops.
     m_pSlipEnabled->set(1);
     slotBeatLoop(pBeatLoopControl->getSize(), false);
+    m_bLoopRollActive = true;
 }
 
 void LoopingControl::slotBeatLoopDeactivate(BeatLoopingControl* pBeatLoopControl) {
@@ -581,6 +662,7 @@ void LoopingControl::slotBeatLoopDeactivateRoll(BeatLoopingControl* pBeatLoopCon
     Q_UNUSED(pBeatLoopControl);
     setLoopingEnabled(false);
     m_pSlipEnabled->set(0);
+    m_bLoopRollActive = false;
 }
 
 void LoopingControl::clearActiveBeatLoop() {
@@ -724,41 +806,187 @@ void LoopingControl::slotBeatLoop(double beats, bool keepStartPoint) {
     setLoopingEnabled(true);
 }
 
+void LoopingControl::slotBeatJump(double beats) {
+    if (!m_pTrack || !m_pBeats) {
+        return;
+    }
+
+    double dPosition = getCurrentSample();
+    double dBeatLength;
+    if (BpmControl::getBeatContext(m_pBeats, dPosition,
+                                   NULL, NULL, &dBeatLength, NULL)) {
+        seekAbs(dPosition + beats * dBeatLength);
+    }
+}
+
+void LoopingControl::slotLoopMove(double beats) {
+    if (!m_pTrack || !m_pBeats) {
+        return;
+    }
+
+    double dPosition = getCurrentSample();
+    double dBeatLength;
+    if (BpmControl::getBeatContext(m_pBeats, dPosition,
+                                   NULL, NULL, &dBeatLength, NULL)) {
+        int old_loop_in = m_iLoopStartSample;
+        int old_loop_out = m_iLoopEndSample;
+        int new_loop_in = m_iLoopStartSample + (beats * dBeatLength);
+        int new_loop_out = m_iLoopEndSample + (beats * dBeatLength);
+        // Should we reject any shift that goes out of bounds?
+
+        m_iLoopStartSample = new_loop_in;
+        if (m_pActiveBeatLoop) {
+            // Ugly hack -- slotBeatLoop takes "true" to mean "keep starting
+            // point".  It gets that in-point from m_iLoopStartSample,
+            // which we just changed so that the loop actually shifts.
+            slotBeatLoop(m_pActiveBeatLoop->getSize(), true);
+        } else {
+            m_pCOLoopStartPosition->set(new_loop_in);
+            m_iLoopEndSample = new_loop_out;
+            m_pCOLoopEndPosition->set(new_loop_out);
+        }
+        seekInsideAdjustedLoop(old_loop_in, old_loop_out,
+                               new_loop_in, new_loop_out);
+    }
+}
+
+void LoopingControl::seekInsideAdjustedLoop(int old_loop_in, int old_loop_out,
+                                            int new_loop_in, int new_loop_out) {
+    if (m_iCurrentSample >= new_loop_in && m_iCurrentSample <= new_loop_out) {
+        return;
+    }
+
+    int new_loop_size = new_loop_out - new_loop_in;
+    if (!even(new_loop_size)) {
+        --new_loop_size;
+    }
+    if (new_loop_size > old_loop_out - old_loop_in) {
+        // Could this happen if the user grows a loop and then also shifts it?
+        qWarning() << "seekInsideAdjustedLoop called for loop that got larger -- ignoring";
+        return;
+    }
+
+    int adjusted_position = m_iCurrentSample;
+    while (adjusted_position > new_loop_out) {
+        adjusted_position -= new_loop_size;
+        if (adjusted_position < new_loop_in) {
+            // I'm not even sure this is possible.  The new loop would have to be bigger than the
+            // old loop, and the playhead was somehow outside the old loop.
+            qWarning() << "SHOULDN'T HAPPEN: seekInsideAdjustedLoop couldn't find a new position --"
+                       << " seeking to in point";
+            adjusted_position = new_loop_in;
+        }
+    }
+    while (adjusted_position < new_loop_in) {
+        adjusted_position += new_loop_size;
+        if (adjusted_position > new_loop_out) {
+            qWarning() << "SHOULDN'T HAPPEN: seekInsideAdjustedLoop couldn't find a new position --"
+                       << " seeking to in point";
+            adjusted_position = new_loop_in;
+        }
+    }
+    if (adjusted_position != m_iCurrentSample) {
+        m_iCurrentSample = adjusted_position;
+        seekAbs(static_cast<double>(adjusted_position));
+    }
+}
+
+BeatJumpControl::BeatJumpControl(const char* pGroup, double size)
+        : m_dBeatJumpSize(size) {
+    m_pJumpForward = new ControlPushButton(
+            keyForControl(pGroup, "beatjump_%1_forward", size));
+    connect(m_pJumpForward, SIGNAL(valueChanged(double)),
+            this, SLOT(slotJumpForward(double)),
+            Qt::DirectConnection);
+    m_pJumpBackward = new ControlPushButton(
+            keyForControl(pGroup, "beatjump_%1_backward", size));
+    connect(m_pJumpBackward, SIGNAL(valueChanged(double)),
+            this, SLOT(slotJumpBackward(double)),
+            Qt::DirectConnection);
+}
+
+BeatJumpControl::~BeatJumpControl() {
+    delete m_pJumpForward;
+    delete m_pJumpBackward;
+}
+
+void BeatJumpControl::slotJumpBackward(double v) {
+    if (v > 0) {
+        emit(beatJump(-m_dBeatJumpSize));
+    }
+}
+
+void BeatJumpControl::slotJumpForward(double v) {
+    if (v > 0) {
+        emit(beatJump(m_dBeatJumpSize));
+    }
+}
+
+LoopMoveControl::LoopMoveControl(const char* pGroup, double size)
+        : m_dLoopMoveSize(size) {
+    m_pMoveForward = new ControlPushButton(
+            keyForControl(pGroup, "loop_move_%1_forward", size));
+    connect(m_pMoveForward, SIGNAL(valueChanged(double)),
+            this, SLOT(slotMoveForward(double)),
+            Qt::DirectConnection);
+    m_pMoveBackward = new ControlPushButton(
+            keyForControl(pGroup, "loop_move_%1_backward", size));
+    connect(m_pMoveBackward, SIGNAL(valueChanged(double)),
+            this, SLOT(slotMoveBackward(double)),
+            Qt::DirectConnection);
+}
+
+LoopMoveControl::~LoopMoveControl() {
+    delete m_pMoveForward;
+    delete m_pMoveBackward;
+}
+
+void LoopMoveControl::slotMoveBackward(double v) {
+    if (v > 0) {
+        emit(loopMove(-m_dLoopMoveSize));
+    }
+}
+
+void LoopMoveControl::slotMoveForward(double v) {
+    if (v > 0) {
+        emit(loopMove(m_dLoopMoveSize));
+    }
+}
+
 BeatLoopingControl::BeatLoopingControl(const char* pGroup, double size)
         : m_dBeatLoopSize(size),
           m_bActive(false) {
     // This is the original beatloop control which is now deprecated. Its value
     // is the state of the beatloop control (1 for enabled, 0 for disabled).
     m_pLegacy = new ControlPushButton(
-        keyForControl(pGroup, "beatloop_%1", size));
-    m_pLegacy->setStates(2);
+            keyForControl(pGroup, "beatloop_%1", size));
     m_pLegacy->setButtonMode(ControlPushButton::TOGGLE);
     connect(m_pLegacy, SIGNAL(valueChanged(double)),
             this, SLOT(slotLegacy(double)),
             Qt::DirectConnection);
     // A push-button which activates the beatloop.
     m_pActivate = new ControlPushButton(
-        keyForControl(pGroup, "beatloop_%1_activate", size));
+            keyForControl(pGroup, "beatloop_%1_activate", size));
     connect(m_pActivate, SIGNAL(valueChanged(double)),
             this, SLOT(slotActivate(double)),
             Qt::DirectConnection);
     // A push-button which toggles the beatloop as active or inactive.
     m_pToggle = new ControlPushButton(
-        keyForControl(pGroup, "beatloop_%1_toggle", size));
+            keyForControl(pGroup, "beatloop_%1_toggle", size));
     connect(m_pToggle, SIGNAL(valueChanged(double)),
             this, SLOT(slotToggle(double)),
             Qt::DirectConnection);
 
     // A push-button which activates rolling beatloops
     m_pActivateRoll = new ControlPushButton(
-        keyForControl(pGroup, "beatlooproll_%1_activate", size));
+            keyForControl(pGroup, "beatlooproll_%1_activate", size));
     connect(m_pActivateRoll, SIGNAL(valueChanged(double)),
             this, SLOT(slotActivateRoll(double)),
             Qt::DirectConnection);
 
     // An indicator control which is 1 if the beatloop is enabled and 0 if not.
     m_pEnabled = new ControlObject(
-        keyForControl(pGroup, "beatloop_%1_enabled", size));
+            keyForControl(pGroup, "beatloop_%1_enabled", size));
 }
 
 BeatLoopingControl::~BeatLoopingControl() {
@@ -821,12 +1049,4 @@ void BeatLoopingControl::slotToggle(double v) {
     } else {
         emit(activateBeatLoop(this));
     }
-}
-
-ConfigKey BeatLoopingControl::keyForControl(const char* pGroup,
-                                            QString ctrlName, double num) {
-    ConfigKey key;
-    key.group = pGroup;
-    key.item = ctrlName.arg(num);
-    return key;
 }

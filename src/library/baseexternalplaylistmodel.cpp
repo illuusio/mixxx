@@ -3,10 +3,12 @@
 #include "library/queryutil.h"
 #include "playermanager.h"
 
-BaseExternalPlaylistModel::BaseExternalPlaylistModel(
-    QObject* parent, TrackCollection* pTrackCollection,
-    QString settingsNamespace, QString playlistsTable,
-    QString playlistTracksTable, QString trackSource)
+BaseExternalPlaylistModel::BaseExternalPlaylistModel(QObject* parent,
+                                                     TrackCollection* pTrackCollection,
+                                                     const char* settingsNamespace,
+                                                     const QString& playlistsTable,
+                                                     const QString& playlistTracksTable,
+                                                     QSharedPointer<BaseTrackCache> trackSource)
         : BaseSqlTableModel(parent, pTrackCollection,
                             settingsNamespace),
           m_playlistsTable(playlistsTable),
@@ -17,25 +19,9 @@ BaseExternalPlaylistModel::BaseExternalPlaylistModel(
 BaseExternalPlaylistModel::~BaseExternalPlaylistModel() {
 }
 
-void BaseExternalPlaylistModel::setTableModel(int id){
-    Q_UNUSED(id);
-}
-
 TrackPointer BaseExternalPlaylistModel::getTrack(const QModelIndex& index) const {
-    QString artist = index.sibling(
-        index.row(), fieldIndex("artist")).data().toString();
-    QString title = index.sibling(
-        index.row(), fieldIndex("title")).data().toString();
-    QString album = index.sibling(
-        index.row(), fieldIndex("album")).data().toString();
-    QString year = index.sibling(
-        index.row(), fieldIndex("year")).data().toString();
-    QString genre = index.sibling(
-        index.row(), fieldIndex("genre")).data().toString();
-    float bpm = index.sibling(
-        index.row(), fieldIndex("bpm")).data().toString().toFloat();
     QString location = index.sibling(
-        index.row(), fieldIndex("location")).data().toString();
+            index.row(), fieldIndex("location")).data().toString();
 
     if (location.isEmpty()) {
         // Track is lost
@@ -62,19 +48,37 @@ TrackPointer BaseExternalPlaylistModel::getTrack(const QModelIndex& index) const
     // saved with the metadata from iTunes. If it was already in the library
     // then we do not touch it so that we do not over-write the user's metadata.
     if (!track_already_in_library) {
+        QString artist = index.sibling(
+                index.row(), fieldIndex("artist")).data().toString();
         pTrack->setArtist(artist);
+
+        QString title = index.sibling(
+                index.row(), fieldIndex("title")).data().toString();
         pTrack->setTitle(title);
+
+        QString album = index.sibling(
+                index.row(), fieldIndex("album")).data().toString();
         pTrack->setAlbum(album);
+
+        QString year = index.sibling(
+                index.row(), fieldIndex("year")).data().toString();
         pTrack->setYear(year);
+
+        QString genre = index.sibling(
+                index.row(), fieldIndex("genre")).data().toString();
         pTrack->setGenre(genre);
+
+        float bpm = index.sibling(
+                index.row(), fieldIndex("bpm")).data().toString().toFloat();
         pTrack->setBpm(bpm);
     }
     return pTrack;
 }
 
 bool BaseExternalPlaylistModel::isColumnInternal(int column) {
-    if (column == fieldIndex("track_id") ||
-        (PlayerManager::numPreviewDecks() == 0 && column == fieldIndex("preview"))) {
+    if (column == fieldIndex(ColumnCache::COLUMN_PLAYLISTTRACKSTABLE_TRACKID) ||
+            (PlayerManager::numPreviewDecks() == 0 &&
+             column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_PREVIEW))) {
         return true;
     }
     return false;
@@ -99,7 +103,7 @@ void BaseExternalPlaylistModel::setPlaylist(QString playlist_path) {
     QSqlRecord finder_query_record = finder_query.record();
     while (finder_query.next()) {
         playlistId = finder_query.value(
-            finder_query_record.indexOf("id")).toInt();
+                finder_query_record.indexOf("id")).toInt();
     }
 
     if (playlistId == -1) {
@@ -130,10 +134,9 @@ void BaseExternalPlaylistModel::setPlaylist(QString playlist_path) {
         return;
     }
 
-    setTable(playlistViewTable, columns[0], columns,
-             m_pTrackCollection->getTrackSource(m_trackSource));
-    setDefaultSort(fieldIndex("position"), Qt::AscendingOrder);
-    initHeaderData();
+    setTable(playlistViewTable, columns[0], columns, m_trackSource);
+    setDefaultSort(fieldIndex(ColumnCache::COLUMN_PLAYLISTTRACKSTABLE_POSITION),
+                   Qt::AscendingOrder);
     setSearch("");
 }
 

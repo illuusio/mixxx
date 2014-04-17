@@ -12,6 +12,7 @@ class ControlObject;
 class ControlPotmeter;
 class ControlObjectThread;
 class AnalyserQueue;
+class EffectsManager;
 
 class BaseTrackPlayer : public BasePlayer {
     Q_OBJECT
@@ -19,6 +20,7 @@ class BaseTrackPlayer : public BasePlayer {
     BaseTrackPlayer(QObject* pParent,
                     ConfigObject<ConfigValue>* pConfig,
                     EngineMaster* pMixingEngine,
+                    EffectsManager* pEffectsManager,
                     EngineChannel::ChannelOrientation defaultOrientation,
                     QString group,
                     bool defaultMaster,
@@ -56,6 +58,7 @@ class BaseTrackPlayer : public BasePlayer {
     ControlObjectThread* m_pLoopOutPoint;
     ControlObject* m_pDuration;
     ControlObjectThread* m_pBPM;
+    ControlObjectThread* m_pKey;
     ControlObjectThread* m_pReplayGain;
     ControlObjectThread* m_pPlay;
     EngineDeck* m_pChannel;

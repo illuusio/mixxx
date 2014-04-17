@@ -1,18 +1,18 @@
 #ifndef HEXSPINBOX_H
 #define HEXSPINBOX_H
 
-#include <qspinbox.h>
-#include <qvalidator.h>
+#include <QSpinBox>
+#include <QValidator>
 
-class HexSpinBox : public QSpinBox
-{
-public:
+class HexSpinBox : public QSpinBox {
+  public:
     HexSpinBox(QWidget *parent);
+    virtual ~HexSpinBox();
 
-protected:
+  protected:
     QString textFromValue(int value) const;
     int valueFromText(const QString& text) const;
-    QValidator::State validate( QString & input, int & pos ) const;
+    QValidator::State validate(QString& input, int& pos) const;
 };
 
-#endif
+#endif /* HEXSPINBOX_H */

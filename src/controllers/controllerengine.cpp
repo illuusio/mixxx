@@ -526,14 +526,14 @@ bool ControllerEngine::checkException() {
         error << (filename.isEmpty() ? "" : filename) << errorMessage << QString(line);
         m_scriptErrors.insert((filename.isEmpty() ? "passed code" : filename), error);
 
-        QString errorText = QString(tr("Uncaught exception at line %1 in file %2: %3"))
-                            .arg(QString::number(line),
-                                (filename.isEmpty() ? "" : filename),
-                                errorMessage);
+        QString errorText = tr("Uncaught exception at line %1 in file %2: %3")
+                .arg(QString::number(line),
+                     (filename.isEmpty() ? "" : filename),
+                     errorMessage);
 
         if (filename.isEmpty())
-            errorText = QString(tr("Uncaught exception at line %1 in passed code: %2"))
-                        .arg(QString::number(line), errorMessage);
+            errorText = tr("Uncaught exception at line %1 in passed code: %2")
+                    .arg(QString::number(line), errorMessage);
 
         scriptErrorDialog(m_bDebug ? QString("%1\nBacktrace:\n%2")
                           .arg(errorText, backtrace.join("\n")) : errorText);
@@ -645,6 +645,108 @@ void ControllerEngine::setValue(QString group, QString name, double newValue) {
             cot->slotSet(newValue);
         }
     }
+}
+
+
+/* -------- ------------------------------------------------------
+   Purpose: Returns the normalized value of a Mixxx control (for scripts)
+   Input:   Control group (e.g. [Channel1]), Key name (e.g. [filterHigh])
+   Output:  The value
+   -------- ------------------------------------------------------ */
+double ControllerEngine::getParameter(QString group, QString name) {
+    ControlObjectThread *cot = getControlObjectThread(group, name);
+    if (cot == NULL) {
+        qWarning() << "ControllerEngine: Unknown control" << group << name << ", returning 0.0";
+        return 0.0;
+    }
+    return cot->getParameter();
+}
+
+/* -------- ------------------------------------------------------
+   Purpose: Sets new normalized parameter of a Mixxx control (for scripts)
+   Input:   Control group, Key name, new value
+   Output:  -
+   -------- ------------------------------------------------------ */
+void ControllerEngine::setParameter(QString group, QString name, double newParameter) {
+    if (isnan(newParameter)) {
+        qWarning() << "ControllerEngine: script setting [" << group << "," << name
+                 << "] to NotANumber, ignoring.";
+        return;
+    }
+
+    ControlObjectThread *cot = getControlObjectThread(group, name);
+
+    // TODO(XXX): support soft takeover.
+    if (cot != NULL) {
+        cot->setParameter(newParameter);
+    }
+}
+
+/* -------- ------------------------------------------------------
+   Purpose: normalize a value of a Mixxx control (for scripts)
+   Input:   Control group, Key name, new value
+   Output:  -
+   -------- ------------------------------------------------------ */
+double ControllerEngine::getParameterForValue(QString group, QString name, double value) {
+    if (isnan(value)) {
+        qWarning() << "ControllerEngine: script setting [" << group << "," << name
+                 << "] to NotANumber, ignoring.";
+        return 0.0;
+    }
+
+    ControlObjectThread *cot = getControlObjectThread(group, name);
+
+    if (cot == NULL) {
+        qWarning() << "ControllerEngine: Unknown control" << group << name << ", returning 0.0";
+        return 0.0;
+    }
+
+    return cot->getParameterForValue(value);
+}
+
+/* -------- ------------------------------------------------------
+   Purpose: Resets the value of a Mixxx control (for scripts)
+   Input:   Control group, Key name, new value
+   Output:  -
+   -------- ------------------------------------------------------ */
+void ControllerEngine::reset(QString group, QString name) {
+    ControlObjectThread *cot = getControlObjectThread(group, name);
+
+    if (cot != NULL) {
+        cot->reset();
+    }
+}
+
+/* -------- ------------------------------------------------------
+   Purpose: default value of a Mixxx control (for scripts)
+   Input:   Control group, Key name, new value
+   Output:  -
+   -------- ------------------------------------------------------ */
+double ControllerEngine::getDefaultValue(QString group, QString name) {
+    ControlObjectThread *cot = getControlObjectThread(group, name);
+
+    if (cot == NULL) {
+        qWarning() << "ControllerEngine: Unknown control" << group << name << ", returning 0.0";
+        return 0.0;
+    }
+
+    return cot->getDefault();
+}
+
+/* -------- ------------------------------------------------------
+   Purpose: default parameter of a Mixxx control (for scripts)
+   Input:   Control group, Key name, new value
+   Output:  -
+   -------- ------------------------------------------------------ */
+double ControllerEngine::getDefaultParameter(QString group, QString name) {
+    ControlObjectThread *cot = getControlObjectThread(group, name);
+
+    if (cot == NULL) {
+        qWarning() << "ControllerEngine: Unknown control" << group << name << ", returning 0.0";
+        return 0.0;
+    }
+
+    return cot->getParameterForValue(cot->getDefault());
 }
 
 /* -------- ------------------------------------------------------

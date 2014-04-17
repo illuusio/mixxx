@@ -25,7 +25,7 @@
 #include "controlobjectthread.h"
 #include "preferences/dlgpreferencepage.h"
 
-#define MIXXX_XFADER_STEEPNESS_COEFF 8.0f
+#define MIXXX_XFADER_STEEPNESS_COEFF 8.0
 
 /**
   *@author John Sully
@@ -43,7 +43,7 @@ class DlgPrefCrossfader : public DlgPreferencePage, public Ui::DlgPrefCrossfader
     /** Apply changes to widget */
     void slotApply();
     void slotUpdate();
-    void setDefaults();
+    void slotResetToDefaults();
 
   signals:
     void apply(const QString &);

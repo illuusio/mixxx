@@ -1,7 +1,7 @@
 #if defined (__WINDOWS__)
 #include <windows.h>
-#include <shellapi.h>
-#include <shobjidl.h>
+#include <Shellapi.h>
+#include <Shlobj.h>
 #else
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -10,15 +10,12 @@
 #include <errno.h>
 #endif
 
-#include <QtGui>
-#include <QDirModel>
-#include <QStringList>
 #include <QFileInfo>
-#include <QDesktopServices>
 
 #include "library/treeitem.h"
 #include "library/browse/foldertreemodel.h"
 #include "library/browse/browsefeature.h"
+#include "util/file.h"
 
 FolderTreeModel::FolderTreeModel(QObject *parent)
         : TreeItemModel(parent) {
@@ -57,6 +54,9 @@ bool FolderTreeModel::directoryHasChildren(const QString& path) const {
     if (it != m_directoryCache.end()) {
         return it.value();
     }
+
+    // Acquire a security token for the path.
+    MDir dir(path);
 
     /*
      *  The following code is too expensive, general and SLOW since

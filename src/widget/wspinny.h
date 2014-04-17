@@ -5,14 +5,18 @@
 #include <QGLWidget>
 #include <QShowEvent>
 #include <QHideEvent>
+#include <QEvent>
 
 #include "widget/wwidget.h"
 #include "vinylcontrol/vinylsignalquality.h"
+#include "skin/skincontext.h"
+#include "widget/wbasewidget.h"
 
 class ControlObjectThread;
+class VisualPlayPosition;
 class VinylControlManager;
 
-class WSpinny : public QGLWidget, public VinylSignalQualityListener {
+class WSpinny : public QGLWidget, public WBaseWidget, public VinylSignalQualityListener {
     Q_OBJECT
   public:
     WSpinny(QWidget* parent, VinylControlManager* pVCMan);
@@ -20,7 +24,7 @@ class WSpinny : public QGLWidget, public VinylSignalQualityListener {
 
     void onVinylSignalQualityUpdate(const VinylSignalQualityReport& report);
 
-    void setup(QDomNode node, QString group);
+    void setup(QDomNode node, const SkinContext& context, QString group);
     void dragEnterEvent(QDragEnterEvent *event);
     void dropEvent(QDropEvent *event);
 
@@ -28,6 +32,10 @@ class WSpinny : public QGLWidget, public VinylSignalQualityListener {
     void updateVinylControlSpeed(double rpm);
     void updateVinylControlEnabled(double enabled);
     void updateVinylControlSignalEnabled(double enabled);
+    void updateSlipEnabled(double enabled);
+
+  protected slots:
+    void maybeUpdate();
 
   signals:
     void trackDropped(QString filename, QString group);
@@ -38,9 +46,9 @@ class WSpinny : public QGLWidget, public VinylSignalQualityListener {
     void mouseMoveEvent(QMouseEvent * e);
     void mousePressEvent(QMouseEvent * e);
     void mouseReleaseEvent(QMouseEvent * e);
-    void wheelEvent(QWheelEvent *e);
     void showEvent(QShowEvent* event);
     void hideEvent(QHideEvent* event);
+    bool event(QEvent* pEvent);
 
     double calculateAngle(double playpos);
     int calculateFullRotations(double playpos);
@@ -52,22 +60,20 @@ class WSpinny : public QGLWidget, public VinylSignalQualityListener {
     QImage* m_pGhostImage;
     ControlObjectThread* m_pPlay;
     ControlObjectThread* m_pPlayPos;
-    ControlObjectThread* m_pVisualPlayPos;
+    QSharedPointer<VisualPlayPosition> m_pVisualPlayPos;
+    ControlObjectThread* m_pRate;
     ControlObjectThread* m_pTrackSamples;
     ControlObjectThread* m_pTrackSampleRate;
     ControlObjectThread* m_pScratch;
     ControlObjectThread* m_pScratchToggle;
     ControlObjectThread* m_pScratchPos;
-    ControlObjectThread* m_pRate;
     ControlObjectThread* m_pVinylControlSpeedType;
     ControlObjectThread* m_pVinylControlEnabled;
     ControlObjectThread* m_pSignalEnabled;
     ControlObjectThread* m_pSlipEnabled;
     ControlObjectThread* m_pSlipPosition;
 
-#ifdef __VINYLCONTROL__
     VinylControlManager* m_pVCManager;
-#endif
     double m_dInitialPos;
 
     int m_iVinylInput;
@@ -78,17 +84,21 @@ class WSpinny : public QGLWidget, public VinylSignalQualityListener {
 
     QString m_group;
     float m_fAngle; //Degrees
+    double m_dAngleCurrentPlaypos;
     double m_dAngleLastPlaypos;
     float m_fGhostAngle;
+    double m_dGhostAngleCurrentPlaypos;
     double m_dGhostAngleLastPlaypos;
     int m_iStartMouseX;
     int m_iStartMouseY;
     int m_iFullRotations;
     double m_dPrevTheta;
     double m_dTheta;
-    /** Speed of the vinyl rotation. */
+    // Speed of the vinyl rotation.
     double m_dRotationsPerSecond;
     bool m_bClampFailedWarning;
+    bool m_bGhostPlayback;
+    bool m_bWidgetDirty;
 };
 
 #endif //_WSPINNY_H

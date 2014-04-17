@@ -32,10 +32,29 @@ class ControlPushButton : public ControlObject {
     enum ButtonMode {
          PUSH = 0,
          TOGGLE,
-         POWERWINDOW
+         POWERWINDOW,
+         LONGPRESSLATCHING,
+         TRIGGER,
     };
 
-    ControlPushButton(ConfigKey key);
+    static QString buttonModeToString(int mode) {
+        switch(mode) {
+            case ControlPushButton::PUSH:
+                return "PUSH";
+            case ControlPushButton::TOGGLE:
+                return "TOGGLE";
+            case ControlPushButton::POWERWINDOW:
+                return "POWERWINDOW";
+            case ControlPushButton::LONGPRESSLATCHING:
+                return "LONGPRESSLATCHING";
+            case ControlPushButton::TRIGGER:
+                return "TRIGGER";
+            default:
+                return "UNKNOWN";
+        }
+    }
+
+    ControlPushButton(ConfigKey key, bool bPersist=false);
     virtual ~ControlPushButton();
 
     inline ButtonMode getButtonMode() const {

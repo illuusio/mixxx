@@ -15,21 +15,23 @@
 
 class TrackInfoObject;
 class ControlObjectThread;
+class VisualPlayPosition;
+class VSyncThread;
 
 class WaveformWidgetRenderer {
-public:
+  public:
     static const int s_waveformMinZoom;
     static const int s_waveformMaxZoom;
 
-public:
+  public:
     explicit WaveformWidgetRenderer(const char* group);
     virtual ~WaveformWidgetRenderer();
 
     bool init();
     virtual bool onInit() {return true;}
 
-    void setup(const QDomNode& node);
-    void onPreRender();
+    void setup(const QDomNode& node, const SkinContext& context);
+    void onPreRender(VSyncThread* vsyncThread);
     void draw(QPainter* painter, QPaintEvent* event);
 
     const char* getGroup() const { return m_group;}
@@ -51,11 +53,17 @@ public:
     //this "regulate" against visual sampling to make the position in widget
     //stable and deterministic
     // Transform sample index to pixel in track.
-    double transformSampleIndexInRendererWorld(int sampleIndex) const;
+    inline double transformSampleIndexInRendererWorld(int sampleIndex) const {
+        const double relativePosition = (double)sampleIndex / (double)m_trackSamples;
+        return transformPositionInRendererWorld(relativePosition);
+    }
     // Transform position (percentage of track) to pixel in track.
-    double transformPositionInRendererWorld(double position) const;
+    inline double transformPositionInRendererWorld(double position) const {
+        return m_trackPixelCount * (position - m_firstDisplayedPosition);
+    }
 
     double getPlayPos() const { return m_playPos;}
+    double getPlayPosVSample() const { return m_playPosVSample;}
     double getZoomFactor() const { return m_zoomFactor;}
     double getRateAdjust() const { return m_rateAdjust;}
     double getGain() const { return m_gain;}
@@ -75,18 +83,17 @@ public:
 
     void setTrack(TrackPointer track);
 
-protected:
+  protected:
     const char* m_group;
     TrackPointer m_trackInfoObject;
-    QVector<WaveformRendererAbstract*> m_rendererStack;
+    QList<WaveformRendererAbstract*> m_rendererStack;
     int m_height;
     int m_width;
     WaveformSignalColors m_colors;
 
     double m_firstDisplayedPosition;
     double m_lastDisplayedPosition;
-    double m_rendererTransformationOffset;
-    double m_rendererTransformationGain;
+    double m_trackPixelCount;
 
     double m_zoomFactor;
     double m_rateAdjust;
@@ -95,8 +102,9 @@ protected:
 
     //TODO: vRince create some class to manage control/value
     //ControlConnection
-    ControlObjectThread* m_pPlayPosControlObject;
+    QSharedPointer<VisualPlayPosition> m_visualPlayPosition;
     double m_playPos;
+    int m_playPosVSample;
     ControlObjectThread* m_pRateControlObject;
     double m_rate;
     ControlObjectThread* m_pRateRangeControlObject;
@@ -117,7 +125,6 @@ protected:
     int currentFrame;
 #endif
 
-    WaveformWidgetRenderer();
 private:
     DISALLOW_COPY_AND_ASSIGN(WaveformWidgetRenderer);
     friend class WaveformWidgetFactory;

@@ -1,6 +1,8 @@
 #ifndef DECK_H
 #define DECK_H
 
+#include <QObject>
+
 #include "basetrackplayer.h"
 
 class Deck : public BaseTrackPlayer {
@@ -9,6 +11,7 @@ class Deck : public BaseTrackPlayer {
     Deck(QObject* pParent,
          ConfigObject<ConfigValue>* pConfig,
          EngineMaster* pMixingEngine,
+         EffectsManager* pEffectsManager,
          EngineChannel::ChannelOrientation defaultOrientation,
          QString group);
     virtual ~Deck();

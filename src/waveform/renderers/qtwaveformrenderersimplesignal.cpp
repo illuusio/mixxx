@@ -9,8 +9,8 @@
 
 #include <QLinearGradient>
 
-QtWaveformRendererSimpleSignal::QtWaveformRendererSimpleSignal( WaveformWidgetRenderer* waveformWidgetRenderer) :
-    WaveformRendererSignalBase( waveformWidgetRenderer) {
+QtWaveformRendererSimpleSignal::QtWaveformRendererSimpleSignal(WaveformWidgetRenderer* waveformWidgetRenderer) :
+    WaveformRendererSignalBase(waveformWidgetRenderer) {
 
 }
 
@@ -19,14 +19,14 @@ QtWaveformRendererSimpleSignal::~QtWaveformRendererSimpleSignal(){
 
 void QtWaveformRendererSimpleSignal::onSetup(const QDomNode &node){
     Q_UNUSED(node);
-    QColor signalColor = m_pColors->getSignalColor();
-    signalColor.setAlphaF(0.8);
 
-    QColor bornderColor = m_pColors->getSignalColor().lighter(125);
-    bornderColor.setAlphaF(0.5);
-    m_borderPen.setColor(bornderColor);
+    QColor borderColor = m_pColors->getSignalColor().lighter(125);
+    borderColor.setAlphaF(0.5);
+    m_borderPen.setColor(borderColor);
     m_borderPen.setWidthF(1.25);
 
+    QColor signalColor = m_pColors->getSignalColor();
+    signalColor.setAlphaF(0.8);
     m_brush = QBrush(signalColor);
 }
 
@@ -78,16 +78,16 @@ void QtWaveformRendererSimpleSignal::draw(QPainter* painter, QPaintEvent* /*even
     }
 
     //draw reference line
-    if( m_alignment == Qt::AlignCenter) {
-        painter->setPen(m_axesColor);
+    if (m_alignment == Qt::AlignCenter) {
+        painter->setPen(m_pColors->getAxesColor());
         painter->drawLine(0,0,m_waveformRenderer->getWidth(),0);
     }
 
     const double firstVisualIndex = m_waveformRenderer->getFirstDisplayedPosition() * dataSize;
     const double lastVisualIndex = m_waveformRenderer->getLastDisplayedPosition() * dataSize;
-    int pointIndex = 0;
-    setPoint(m_polygon[pointIndex], 0.0, 0.0);
-    pointIndex++;
+    m_polygon.clear();
+    m_polygon.reserve(2 * m_waveformRenderer->getWidth() + 2);
+    m_polygon.append(QPointF(0.0, 0.0));
 
     const double offset = firstVisualIndex;
 
@@ -118,24 +118,23 @@ void QtWaveformRendererSimpleSignal::draw(QPainter* painter, QPaintEvent* /*even
             direction = -1.0;
 
             // After preparing the first channel, insert the pivot point.
-            setPoint(m_polygon[pointIndex], m_waveformRenderer->getWidth(), 0.0);
-            pointIndex++;
+            m_polygon.append(QPointF(m_waveformRenderer->getWidth(), 0.0));
         }
 
         for (int x = startPixel;
-             (startPixel < endPixel) ? (x <= endPixel) : (x >= endPixel);
-             x += delta) {
+                (startPixel < endPixel) ? (x <= endPixel) : (x >= endPixel);
+                x += delta) {
 
             // TODO(rryan) remove before 1.11 release. I'm seeing crashes
             // sometimes where the pointIndex is very very large. It hasn't come
             // back since adding locking, but I'm leaving this so that we can
             // get some info about it before crashing. (The crash usually
             // corrupts a lot of the stack).
-            if (pointIndex > 2*m_waveformRenderer->getWidth()+2) {
+            if (m_polygon.size() > 2 * m_waveformRenderer->getWidth() + 2) {
                 qDebug() << "OUT OF CONTROL"
-                         << 2*m_waveformRenderer->getWidth()+2
+                         << 2 * m_waveformRenderer->getWidth() + 2
                          << dataSize
-                         << channel << pointIndex << x;
+                         << channel << m_polygon.size() << x;
             }
 
             // Width of the x position in visual indices.
@@ -162,8 +161,7 @@ void QtWaveformRendererSimpleSignal::draw(QPainter* painter, QPaintEvent* /*even
             // point for this pixel.
             const int lastVisualFrame = dataSize / 2 - 1;
             if (visualFrameStop < 0 || visualFrameStart > lastVisualFrame) {
-                setPoint(m_polygon[pointIndex], x, 0.0);
-                pointIndex++;
+                m_polygon.append(QPointF(x, 0.0));
                 continue;
             }
 
@@ -197,21 +195,19 @@ void QtWaveformRendererSimpleSignal::draw(QPainter* painter, QPaintEvent* /*even
                 maxAll = math_max(maxAll, all);
             }
 
-            setPoint(m_polygon[pointIndex], x, (float)maxAll*direction);
-            pointIndex++;
+            m_polygon.append(QPointF(x, (float)maxAll * direction));
         }
     }
 
     //If channel are not displayed separatly we nne to close the loop properly
     if (channelSeparation == 1) {
-        setPoint(m_polygon[pointIndex], m_waveformRenderer->getWidth(), 0.0);
-        pointIndex++;
+        m_polygon.append(QPointF(m_waveformRenderer->getWidth(), 0.0));
     }
 
     painter->setPen(m_borderPen);
     painter->setBrush(m_brush);
 
-    painter->drawPolygon(&m_polygon[0], pointIndex);
+    painter->drawPolygon(&m_polygon[0], m_polygon.size());
 
     painter->restore();
 }

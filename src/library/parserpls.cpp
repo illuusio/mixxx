@@ -10,10 +10,9 @@
 // Copyright: See COPYING file that comes with this distribution
 //
 //
-#include "parser.h"
-#include "parserpls.h"
-#include <QDebug>
-#include <QTextStream>
+#include "library/parserpls.h"
+
+#include <QtDebug>
 #include <QMessageBox>
 #include <QDir>
 #include <QFile>
@@ -61,7 +60,7 @@ QList<QString> ParserPls::parse(QString sFilename)
         bool isCR_encoded = ba.contains("\r");
         if(isCR_encoded && !isCRLF_encoded)
             ba.replace('\r','\n');
-        QTextStream textstream(ba.data());
+        QTextStream textstream(ba.constData());
 
         while(!textstream.atEnd()) {
             QString psLine = getFilepath(&textstream, basepath);

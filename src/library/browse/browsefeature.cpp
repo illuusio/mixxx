@@ -17,6 +17,7 @@
 #include "widget/wlibrarytextbrowser.h"
 #include "widget/wlibrary.h"
 #include "mixxxkeyboard.h"
+#include "util/sandbox.h"
 
 const QString kQuickLinksSeparator = "-+-";
 
@@ -28,13 +29,20 @@ BrowseFeature::BrowseFeature(QObject* parent,
           m_pConfig(pConfig),
           m_browseModel(this, pTrackCollection, pRecordingManager),
           m_proxyModel(&m_browseModel),
-          m_pTrackCollection(pTrackCollection) {
+          m_pTrackCollection(pTrackCollection),
+          m_pLastRightClickedItem(NULL) {
+    connect(this, SIGNAL(requestAddDir(QString)),
+            parent, SLOT(slotRequestAddDir(QString)));
 
     m_pAddQuickLinkAction = new QAction(tr("Add to Quick Links"),this);
     connect(m_pAddQuickLinkAction, SIGNAL(triggered()), this, SLOT(slotAddQuickLink()));
 
     m_pRemoveQuickLinkAction = new QAction(tr("Remove from Quick Links"),this);
     connect(m_pRemoveQuickLinkAction, SIGNAL(triggered()), this, SLOT(slotRemoveQuickLink()));
+
+    m_pAddtoLibraryAction = new QAction(tr("Add to Library"),this);
+    connect(m_pAddtoLibraryAction, SIGNAL(triggered()),
+            this, SLOT(slotAddToLibrary()));
 
     m_proxyModel.setFilterCaseSensitivity(Qt::CaseInsensitive);
     m_proxyModel.setSortCaseSensitivity(Qt::CaseInsensitive);
@@ -123,6 +131,14 @@ void BrowseFeature::slotAddQuickLink() {
     saveQuickLinks();
 }
 
+void BrowseFeature::slotAddToLibrary() {
+    if (!m_pLastRightClickedItem) {
+        return;
+    }
+    QString spath = m_pLastRightClickedItem->dataPath().toString();
+    emit(requestAddDir(spath));
+}
+
 void BrowseFeature::slotRemoveQuickLink() {
     if (!m_pLastRightClickedItem) {
         return;
@@ -166,7 +182,25 @@ void BrowseFeature::activateChild(const QModelIndex& index) {
     TreeItem *item = static_cast<TreeItem*>(index.internalPointer());
     qDebug() << "BrowseFeature::activateChild " << item->data() << " "
              << item->dataPath();
-    m_browseModel.setPath(item->dataPath().toString());
+
+    QString path = item->dataPath().toString();
+    if (path == QUICK_LINK_NODE || path == DEVICE_NODE) {
+        m_browseModel.setPath(MDir());
+    } else {
+        // Open a security token for this path and if we do not have access, ask
+        // for it.
+        MDir dir(path);
+        if (!dir.canAccess()) {
+            if (Sandbox::askForAccess(path)) {
+                // Re-create to get a new token.
+                dir = MDir(path);
+            } else {
+                // TODO(rryan): Activate an info page about sandboxing?
+                return;
+            }
+        }
+        m_browseModel.setPath(dir);
+    }
     emit(showTrackModel(&m_proxyModel));
 }
 
@@ -180,7 +214,7 @@ void BrowseFeature::onRightClickChild(const QPoint& globalPos, QModelIndex index
 
     QString path = item->dataPath().toString();
 
-    if (path == QUICK_LINK_NODE || path == DEVICE_NODE || path == "/") {
+    if (path == QUICK_LINK_NODE || path == DEVICE_NODE) {
         return;
     }
 
@@ -199,6 +233,7 @@ void BrowseFeature::onRightClickChild(const QPoint& globalPos, QModelIndex index
      }
 
      menu.addAction(m_pAddQuickLinkAction);
+     menu.addAction(m_pAddtoLibraryAction);
      menu.exec(globalPos);
      onLazyChildExpandation(index);
 }
@@ -236,15 +271,16 @@ void BrowseFeature::onLazyChildExpandation(const QModelIndex &index){
             TreeItem* driveLetter = new TreeItem(
                 drive.canonicalPath(), // displays C:
                 drive.filePath(), //Displays C:/
-                this ,
+                this,
                 item);
             folders << driveLetter;
         }
     } else {
         // we assume that the path refers to a folder in the file system
         // populate childs
-        QDir dir(path);
-        QFileInfoList all = dir.entryInfoList(
+        MDir dir(path);
+
+        QFileInfoList all = dir.dir().entryInfoList(
             QDir::Dirs | QDir::NoDotAndDotDot);
 
         // loop through all the item and construct the childs
@@ -307,35 +343,67 @@ QString BrowseFeature::extractNameFromPath(QString spath) {
 }
 
 QStringList BrowseFeature::getDefaultQuickLinks() const {
-    //Default configuration
-    QString mixxx_music_dir = m_pConfig->getValueString(ConfigKey("[Playlist]","Directory"));
-    QString os_music_folder_dir = QDesktopServices::storageLocation(
-        QDesktopServices::MusicLocation);
-    QString os_documents_folder_dir = QDesktopServices::storageLocation(
-        QDesktopServices::DocumentsLocation);
-    QString os_home_folder_dir = QDesktopServices::storageLocation(
-        QDesktopServices::HomeLocation);
-    QString os_desktop_folder_dir = QDesktopServices::storageLocation(
-        QDesktopServices::DesktopLocation);
-    QStringList result;
-
-    result << mixxx_music_dir+"/";
-
-    if (mixxx_music_dir != os_music_folder_dir) {
-        result << os_music_folder_dir + "/";
-    }
-
+    // Default configuration
+    QStringList mixxxMusicDirs = m_pTrackCollection->getDirectoryDAO().getDirs();
+    QDir osMusicDir(QDesktopServices::storageLocation(
+            QDesktopServices::MusicLocation));
+    QDir osDocumentsDir(QDesktopServices::storageLocation(
+            QDesktopServices::DocumentsLocation));
+    QDir osHomeDir(QDesktopServices::storageLocation(
+            QDesktopServices::HomeLocation));
+    QDir osDesktopDir(QDesktopServices::storageLocation(
+            QDesktopServices::DesktopLocation));
+    QDir osDownloadsDir(osHomeDir);
     // TODO(XXX) i18n -- no good way to get the download path. We could tr() it
     // but the translator may not realize we want the usual name of the
     // downloads folder.
-    QDir downloads(os_home_folder_dir);
-    if (downloads.cd("Downloads")) {
-        result << downloads.absolutePath() + "/";
+    bool downloadsExists = osDownloadsDir.cd("Downloads");
+
+    QStringList result;
+    bool osMusicDirIncluded = false;
+    bool osDownloadsDirIncluded = false;
+    bool osDesktopDirIncluded = false;
+    bool osDocumentsDirIncluded = false;
+    foreach (QString dirPath, mixxxMusicDirs) {
+        QDir dir(dirPath);
+        // Skip directories we don't have permission to.
+        if (!Sandbox::canAccessFile(dir)) {
+            continue;
+        }
+        if (dir == osMusicDir) {
+            osMusicDirIncluded = true;
+        }
+        if (dir == osDownloadsDir) {
+            osDownloadsDirIncluded = true;
+        }
+        if (dir == osDesktopDir) {
+            osDesktopDirIncluded = true;
+        }
+        if (dir == osDocumentsDir) {
+            osDocumentsDirIncluded = true;
+        }
+        result << dir.canonicalPath() + "/";
     }
-    result << os_desktop_folder_dir + "/";
-    result << os_documents_folder_dir + "/";
+
+    if (!osMusicDirIncluded && Sandbox::canAccessFile(osMusicDir)) {
+        result << osMusicDir.canonicalPath() + "/";
+    }
+
+    if (downloadsExists && !osDownloadsDirIncluded &&
+            Sandbox::canAccessFile(osDownloadsDir)) {
+        result << osDownloadsDir.canonicalPath() + "/";
+    }
+
+    if (!osDesktopDirIncluded &&
+            Sandbox::canAccessFile(osDesktopDir)) {
+        result << osDesktopDir.canonicalPath() + "/";
+    }
+
+    if (!osDocumentsDirIncluded &&
+            Sandbox::canAccessFile(osDocumentsDir)) {
+        result << osDocumentsDir.canonicalPath() + "/";
+    }
 
     qDebug() << "Default quick links:" << result;
-
     return result;
 }

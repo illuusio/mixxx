@@ -5,6 +5,10 @@
 #include <QList>
 #include <QPair>
 #include <QAction>
+#include <QVariant>
+#include <QUrl>
+#include <QIcon>
+#include <QPoint>
 
 #include "library/libraryfeature.h"
 #include "library/cratetablemodel.h"
@@ -61,6 +65,7 @@ class CrateFeature : public LibraryFeature {
     QModelIndex constructChildModel(int selected_id);
     void clearChildModel();
     void buildCrateList();
+    int crateIdFromIndex(QModelIndex index);
 
     TrackCollection* m_pTrackCollection;
     CrateDAO& m_crateDao;

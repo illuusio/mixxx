@@ -1,9 +1,8 @@
-#include <QItemDelegate>
-#include <QtCore>
-#include <QtGui>
-#include <QtXml>
 #include <QModelIndex>
 #include <QInputDialog>
+#include <QDesktopServices>
+#include <QUrl>
+#include <QDrag>
 
 #include "widget/wwidget.h"
 #include "widget/wskincolor.h"
@@ -12,11 +11,13 @@
 #include "library/trackcollection.h"
 #include "trackinfoobject.h"
 #include "controlobject.h"
-#include "controlobjectthreadmain.h"
+#include "controlobjectthread.h"
 #include "widget/wtracktableview.h"
 #include "dlgtrackinfo.h"
 #include "soundsourceproxy.h"
 #include "playermanager.h"
+#include "util/dnd.h"
+#include "dlgpreflibrary.h"
 
 WTrackTableView::WTrackTableView(QWidget * parent,
                                  ConfigObject<ConfigValue> * pConfig,
@@ -359,11 +360,25 @@ void WTrackTableView::slotMouseDoubleClicked(const QModelIndex &index) {
     if (!modelHasCapabilities(TrackModel::TRACKMODELCAPS_LOADTODECK)) {
         return;
     }
-
-    TrackModel* trackModel = getTrackModel();
-    TrackPointer pTrack;
-    if (trackModel && (pTrack = trackModel->getTrack(index))) {
-        emit(loadTrack(pTrack));
+    // Read the current TrackLoadAction settings
+    int action = DlgPrefLibrary::LOAD_TRACK_DECK; // default action
+    if (modelHasCapabilities(TrackModel::TRACKMODELCAPS_ADDTOAUTODJ)) {
+        action = m_pConfig->getValueString(ConfigKey("[Library]","TrackLoadAction")).toInt();
+    }
+    switch (action) {
+    case DlgPrefLibrary::ADD_TRACK_BOTTOM:
+            sendToAutoDJ(false); // add track to Auto-DJ Queue (bottom)
+            break;
+    case DlgPrefLibrary::ADD_TRACK_TOP:
+            sendToAutoDJ(true); // add track to Auto-DJ Queue (top)
+            break;
+    default: // load track to next available deck
+            TrackModel* trackModel = getTrackModel();
+            TrackPointer pTrack;
+            if (trackModel && (pTrack = trackModel->getTrack(index))) {
+                emit(loadTrack(pTrack));
+            }
+            break;
     }
 }
 
@@ -376,7 +391,7 @@ void WTrackTableView::loadSelectionToGroup(QString group, bool play) {
             ConfigKey("[Controls]","AllowTrackLoadToPlayingDeck")).toInt())) {
             // TODO(XXX): Check for other than just the first preview deck.
             if (group != "[PreviewDeck1]" &&
-                    ControlObject::get(ConfigKey(group, "play")) > 0.0f) {
+                    ControlObject::get(ConfigKey(group, "play")) > 0.0) {
                 return;
             }
         }
@@ -808,31 +823,16 @@ void WTrackTableView::mouseMoveEvent(QMouseEvent* pEvent) {
         return;
     // qDebug() << "MouseMoveEvent";
     // Iterate over selected rows and append each item's location url to a list.
-    QList<QUrl> locationUrls;
+    QList<QString> locations;
     QModelIndexList indices = selectionModel()->selectedRows();
+
     foreach (QModelIndex index, indices) {
         if (!index.isValid()) {
             continue;
         }
-        QUrl url = QUrl::fromLocalFile(trackModel->getTrackLocation(index));
-        if (!url.isValid()) {
-            qDebug() << this << "ERROR: invalid url" << url;
-            continue;
-        }
-        locationUrls.append(url);
+        locations.append(trackModel->getTrackLocation(index));
     }
-
-    if (locationUrls.empty()) {
-        return;
-    }
-
-    QMimeData* mimeData = new QMimeData();
-    mimeData->setUrls(locationUrls);
-
-    QDrag* drag = new QDrag(this);
-    drag->setMimeData(mimeData);
-    drag->setPixmap(QPixmap(":images/library/ic_library_drag_and_drop.png"));
-    drag->exec(Qt::CopyAction);
+    DragAndDropHelper::dragTrackLocations(locations, this);
 }
 
 // Drag enter event, happens when a dragged item hovers over the track table view
@@ -902,20 +902,6 @@ void WTrackTableView::dropEvent(QDropEvent * event) {
     if (!event->mimeData()->hasUrls() || trackModel->isLocked()) {
         event->ignore();
         return;
-    }
-    QList<QUrl> urls(event->mimeData()->urls());
-    QUrl url;
-    QModelIndex selectedIndex; //Index of a selected track (iterator)
-
-    // Filter out invalid URLs (eg. files that aren't supported audio filetypes, etc.)
-    QRegExp fileRx(SoundSourceProxy::supportedFileExtensionsRegex(),
-                    Qt::CaseInsensitive);
-    for (int i = 0; i < urls.size(); ++i) {
-        if (fileRx.indexIn(urls.at(i).path()) == -1) {
-            // remove invalid urls and decrease i because the size of
-            // urls has changed.
-            urls.removeAt(--i);
-        }
     }
 
     // Save the vertical scrollbar position. Adding new tracks and moving tracks in
@@ -1039,9 +1025,18 @@ void WTrackTableView::dropEvent(QDropEvent * event) {
         // clears them)
         this->selectionModel()->clear();
 
+        // Add all the dropped URLs/tracks to the track model (playlist/crate)
+        QList<QFileInfo> fileList = DragAndDropHelper::supportedTracksFromUrls(
+            event->mimeData()->urls(), false, true);
+
+        QList<QString> fileLocationList;
+        foreach (const QFileInfo& fileInfo, fileList) {
+            fileLocationList.append(fileInfo.canonicalFilePath());
+        }
+
         // Drag-and-drop from an external application
         // eg. dragging a track from Windows Explorer onto the track table.
-        int numNewRows = urls.count();
+        int numNewRows = fileLocationList.count();
 
         // Have to do this here because the index is invalid after
         // addTrack
@@ -1062,12 +1057,6 @@ void WTrackTableView::dropEvent(QDropEvent * event) {
             selectionStartRow = model()->rowCount();
         }
 
-        // Add all the dropped URLs/tracks to the track model (playlist/crate)
-        QList<QString> fileLocationList;
-        foreach(url, urls) {
-            QString file(url.toLocalFile());
-            fileLocationList.append(file);
-        }
         // calling the addTracks returns number of failed additions
         int tracksAdded = trackModel->addTracks(destIndex, fileLocationList);
 
@@ -1106,10 +1095,6 @@ void WTrackTableView::keyPressEvent(QKeyEvent* event) {
         // causes a track to load since we allow in-line editing
         // of table items in general
         return;
-    } else if (event->key() == Qt::Key_BracketLeft) {
-        loadSelectionToGroup("[Channel1]");
-    } else if (event->key() == Qt::Key_BracketRight) {
-        loadSelectionToGroup("[Channel2]");
     } else {
         QTableView::keyPressEvent(event);
     }

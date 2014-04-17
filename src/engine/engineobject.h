@@ -3,7 +3,7 @@
                              -------------------
     begin                : Wed Feb 20 2002
     copyright            : (C) 2002 by Tue and Ken Haste Andersen
-    email                : 
+    email                :
  ***************************************************************************/
 
 /***************************************************************************
@@ -18,8 +18,10 @@
 #ifndef ENGINEOBJECT_H
 #define ENGINEOBJECT_H
 
-#include <qobject.h>
+#include <QObject>
+
 #include "defs.h"
+#include "engine/effects/groupfeaturestate.h"
 
 /**
   *@author Tue and Ken Haste Andersen
@@ -27,18 +29,18 @@
 
 class EngineObject : public QObject {
     Q_OBJECT
-public:
+  public:
     EngineObject();
     virtual ~EngineObject();
-    virtual void process(const CSAMPLE *pIn, const CSAMPLE *pOut, const int iLen) = 0;
-//    static int getPlaySrate();
 
-//protected:
-//    void setPlaySrate(int srate);
+    virtual void process(const CSAMPLE* pIn, CSAMPLE* pOut,
+                         const int iLen) = 0;
 
-//private:
-//    static int PLAY_SRATE;
+    // Sub-classes re-implement and populate GroupFeatureState with the features
+    // they extract.
+    virtual void collectFeatures(GroupFeatureState* pGroupFeatures) const {
+        Q_UNUSED(pGroupFeatures);
+    }
 };
-
 
 #endif

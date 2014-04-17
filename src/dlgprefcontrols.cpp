@@ -27,53 +27,37 @@
 #include "qcombobox.h"
 #include "configobject.h"
 #include "controlobject.h"
-#include "controlobjectthreadmain.h"
+#include "controlobjectslave.h"
 #include "widget/wnumberpos.h"
 #include "engine/enginebuffer.h"
 #include "engine/ratecontrol.h"
 #include "skin/skinloader.h"
 #include "skin/legacyskinparser.h"
-#include "waveform/waveformwidgetfactory.h"
-#include "waveform/renderers/waveformwidgetrenderer.h"
 #include "playermanager.h"
 #include "controlobject.h"
 #include "mixxx.h"
+#include "defs_urls.h"
 
-DlgPrefControls::DlgPrefControls(QWidget * parent, MixxxApp * mixxx,
+DlgPrefControls::DlgPrefControls(QWidget * parent, MixxxMainWindow * mixxx,
                                  SkinLoader* pSkinLoader,
                                  PlayerManager* pPlayerManager,
                                  ConfigObject<ConfigValue> * pConfig)
         :  DlgPreferencePage(parent),
            m_pConfig(pConfig),
-           m_timer(-1),
            m_mixxx(mixxx),
            m_pSkinLoader(pSkinLoader),
-           m_pPlayerManager(pPlayerManager) {
+           m_pPlayerManager(pPlayerManager),
+           m_iNumConfiguredDecks(0),
+           m_iNumConfiguredSamplers(0) {
     setupUi(this);
 
-    for (unsigned int i = 0; i < PlayerManager::numDecks(); ++i) {
-        QString group = PlayerManager::groupForDeck(i);
-        m_rateControls.push_back(new ControlObjectThread(
-                group, "rate"));
-        m_rateRangeControls.push_back(new ControlObjectThread(
-                group, "rateRange"));
-        m_rateDirControls.push_back(new ControlObjectThread(
-                group, "rate_dir"));
-        m_cueControls.push_back(new ControlObjectThread(
-                group, "cue_mode"));
-    }
+    m_pNumDecks = new ControlObjectSlave("[Master]", "num_decks", this);
+    m_pNumDecks->connectValueChanged(SLOT(slotNumDecksChanged(double)));
+    slotNumDecksChanged(m_pNumDecks->get());
 
-    for (unsigned int i = 0; i < m_pPlayerManager->numSamplers(); ++i) {
-        QString group = PlayerManager::groupForSampler(i);
-        m_rateControls.push_back(new ControlObjectThread(
-                group, "rate"));
-        m_rateRangeControls.push_back(new ControlObjectThread(
-                group, "rateRange"));
-        m_rateDirControls.push_back(new ControlObjectThread(
-                group, "rate_dir"));
-        m_cueControls.push_back(new ControlObjectThread(
-                group, "cue_mode"));
-    }
+    m_pNumSamplers = new ControlObjectSlave("[Master]", "num_samplers", this);
+    m_pNumSamplers->connectValueChanged(SLOT(slotNumSamplersChanged(double)));
+    slotNumSamplersChanged(m_pNumSamplers->get());
 
     // Position display configuration
     m_pControlPositionDisplay = new ControlObject(ConfigKey("[Controls]", "ShowDurationRemaining"));
@@ -86,12 +70,12 @@ DlgPrefControls::DlgPrefControls(QWidget * parent, MixxxApp * mixxx,
     if (m_pConfig->getValueString(ConfigKey("[Controls]","PositionDisplay")).toInt() == 1)
     {
         ComboBoxPosition->setCurrentIndex(1);
-        m_pControlPositionDisplay->set(1.0f);
+        m_pControlPositionDisplay->set(1.0);
     }
     else
     {
         ComboBoxPosition->setCurrentIndex(0);
-        m_pControlPositionDisplay->set(0.0f);
+        m_pControlPositionDisplay->set(0.0);
     }
     connect(ComboBoxPosition,   SIGNAL(activated(int)), this, SLOT(slotSetPositionDisplay(int)));
 
@@ -99,14 +83,12 @@ DlgPrefControls::DlgPrefControls(QWidget * parent, MixxxApp * mixxx,
     if (m_pConfig->getValueString(ConfigKey("[Controls]","RateDir")).length() == 0)
         m_pConfig->set(ConfigKey("[Controls]","RateDir"),ConfigValue(0));
 
-    slotSetRateDir(m_pConfig->getValueString(ConfigKey("[Controls]","RateDir")).toInt());
     connect(ComboBoxRateDir,   SIGNAL(activated(int)), this, SLOT(slotSetRateDir(int)));
 
     // Set default range as stored in config file
     if (m_pConfig->getValueString(ConfigKey("[Controls]","RateRange")).length() == 0)
         m_pConfig->set(ConfigKey("[Controls]","RateRange"),ConfigValue(2));
 
-    slotSetRateRange(m_pConfig->getValueString(ConfigKey("[Controls]","RateRange")).toInt());
     connect(ComboBoxRateRange, SIGNAL(activated(int)), this, SLOT(slotSetRateRange(int)));
 
     //
@@ -156,44 +138,60 @@ DlgPrefControls::DlgPrefControls(QWidget * parent, MixxxApp * mixxx,
 
     QDir translationsDir(translationsFolder);
     QStringList fileNames = translationsDir.entryList(QStringList("mixxx_*.qm"));
+    fileNames.push_back("mixxx_en_US.qm"); // add source language as a fake value
 
-    ComboBoxLocale->addItem("System", ""); // System default locale
-    ComboBoxLocale->setCurrentIndex(0);
-
+    bool indexFlag = false; // it'll indicate if the selected index changed.
     for (int i = 0; i < fileNames.size(); ++i) {
         // Extract locale from filename
         QString locale = fileNames[i];
         locale.truncate(locale.lastIndexOf('.'));
         locale.remove(0, locale.indexOf('_') + 1);
+        QLocale qlocale = QLocale(locale);
 
-        QString lang = QLocale::languageToString(QLocale(locale).language());
+        QString lang = QLocale::languageToString(qlocale.language());
+        QString country = QLocale::countryToString(qlocale.country());
         if (lang == "C") { // Ugly hack to remove the non-resolving locales
             continue;
         }
-
+        lang = QString("%1 (%2)").arg(lang).arg(country);
         ComboBoxLocale->addItem(lang, locale); // locale as userdata (for storing to config)
         if (locale == currentLocale) { // Set the currently selected locale
             ComboBoxLocale->setCurrentIndex(ComboBoxLocale->count() - 1);
+            indexFlag = true;
         }
     }
+    ComboBoxLocale->model()->sort(0); // Sort languages list
+
+    ComboBoxLocale->insertItem(0,"System", ""); // System default locale - insert at the top
+    if (!indexFlag) { // if selectedIndex didn't change - select system default
+        ComboBoxLocale->setCurrentIndex(0);
+    }
+
     connect(ComboBoxLocale, SIGNAL(activated(int)),
             this, SLOT(slotSetLocale(int)));
 
     //
-    // Default Cue Behavior
+    // Cue Mode
     //
 
+    // Add "(?)" with a manual link to the label
+    labelCueMode->setText(
+            labelCueMode->text() +
+            " <a href=\"" +
+            MIXXX_MANUAL_URL +
+            "/chapters/user_interface.html#using-cue-modes\">(?)</a>");
+
     // Set default value in config file and control objects, if not present
-    QString cueDefault = m_pConfig->getValueString(ConfigKey("[Controls]","CueDefault"));
-    if(cueDefault.length() == 0) {
-        m_pConfig->set(ConfigKey("[Controls]","CueDefault"), ConfigValue(0));
-        cueDefault = "0";
-    }
+    // Default is "0" = Mixxx Mode
+    QString cueDefault = m_pConfig->getValueString(ConfigKey("[Controls]","CueDefault"), "0");
     int cueDefaultValue = cueDefault.toInt();
 
     // Update combo box
-    ComboBoxCueDefault->addItem(tr("CDJ Mode"));
-    ComboBoxCueDefault->addItem(tr("Simple"));
+    ComboBoxCueDefault->addItem(tr("Mixxx mode"));
+    ComboBoxCueDefault->addItem(tr("Pioneer mode"));
+    ComboBoxCueDefault->addItem(tr("Denon mode"));
+    ComboBoxCueDefault->addItem(tr("Numark mode"));
+
     ComboBoxCueDefault->setCurrentIndex(cueDefaultValue);
 
     slotSetCueDefault(cueDefaultValue);
@@ -255,24 +253,32 @@ DlgPrefControls::DlgPrefControls(QWidget * parent, MixxxApp * mixxx,
     // Skin configurations
     //
     QString warningString = "<img src=\":/images/preferences/ic_preferences_warning.png\") width=16 height=16 />"
-        + tr("The selected skin is bigger than your screen resolution.");
+        + tr("The minimum size of the selected skin is bigger than your screen resolution.");
     warningLabel->setText(warningString);
 
     ComboBoxSkinconf->clear();
 
-    QDir dir(m_pConfig->getResourcePath() + "skins/");
-    dir.setFilter(QDir::Dirs);
+    QDir skinsDir(m_pConfig->getResourcePath() + "skins/");
+    skinsDir.setFilter(QDir::Dirs);
+
+    QList<QFileInfo> list = skinsDir.entryInfoList();
+
+    if (CmdlineArgs::Instance().getDeveloper()) {
+        // Show developer skins
+        QDir developerSkinsDir(m_pConfig->getResourcePath() + "developer_skins/");
+        developerSkinsDir.setFilter(QDir::Dirs);
+        list += developerSkinsDir.entryInfoList();
+    }
 
     QString configuredSkinPath = m_pSkinLoader->getConfiguredSkinPath();
 
-    QList<QFileInfo> list = dir.entryInfoList();
     int j=0;
     for (int i=0; i<list.size(); ++i)
     {
         if (list.at(i).fileName()!="." && list.at(i).fileName()!="..")
         {
             checkSkinResolution(list.at(i).fileName())
-                    ? ComboBoxSkinconf->insertItem(i, QIcon(":/trolltech/styles/commonstyle/images/standardbutton-apply-32.png"), list.at(i).fileName())
+                    ? ComboBoxSkinconf->insertItem(i, list.at(i).fileName())
                     : ComboBoxSkinconf->insertItem(i, QIcon(":/images/preferences/ic_preferences_warning.png"), list.at(i).fileName());
 
             if (list.at(i).filePath() == configuredSkinPath) {
@@ -282,12 +288,23 @@ DlgPrefControls::DlgPrefControls(QWidget * parent, MixxxApp * mixxx,
         }
     }
 
+
     connect(ComboBoxSkinconf, SIGNAL(activated(int)), this, SLOT(slotSetSkin(int)));
     connect(ComboBoxSchemeconf, SIGNAL(activated(int)), this, SLOT(slotSetScheme(int)));
 
     checkSkinResolution(ComboBoxSkinconf->currentText())
              ? warningLabel->hide() : warningLabel->show();
     slotUpdateSchemes();
+
+    //
+    // Starts in fullscreen mode
+    //
+    ComboBoxStartInFullscreen->addItem(tr("Off")); // 0
+    ComboBoxStartInFullscreen->addItem(tr("On")); // 1
+    ComboBoxStartInFullscreen->setCurrentIndex(m_pConfig->getValueString(
+                       ConfigKey("[Config]","StartInFullscreen"),"0").toInt());
+    connect(ComboBoxStartInFullscreen, SIGNAL(activated(int)),
+            this, SLOT(slotSetStartInFullscreen(int)));
 
     //
     // Tooltip configuration
@@ -320,26 +337,14 @@ DlgPrefControls::DlgPrefControls(QWidget * parent, MixxxApp * mixxx,
                 );
 
     slotUpdate();
-
-    initWaveformControl();
 }
 
-DlgPrefControls::~DlgPrefControls()
-{
+DlgPrefControls::~DlgPrefControls() {
     delete m_pControlPositionDisplay;
-
-    foreach (ControlObjectThread* pControl, m_rateControls) {
-        delete pControl;
-    }
-    foreach (ControlObjectThread* pControl, m_rateDirControls) {
-        delete pControl;
-    }
-    foreach (ControlObjectThread* pControl, m_cueControls) {
-        delete pControl;
-    }
-    foreach (ControlObjectThread* pControl, m_rateRangeControls) {
-        delete pControl;
-    }
+    qDeleteAll(m_rateControls);
+    qDeleteAll(m_rateDirControls);
+    qDeleteAll(m_cueControls);
+    qDeleteAll(m_rateRangeControls);
 }
 
 void DlgPrefControls::slotUpdateSchemes()
@@ -402,6 +407,10 @@ void DlgPrefControls::slotUpdate()
         ComboBoxRateDir->setCurrentIndex(1);
 }
 
+void DlgPrefControls::slotResetToDefaults() {
+    // TODO(XXX): Set the defaults.
+}
+
 void DlgPrefControls::slotSetLocale(int pos) {
     QString newLocale = ComboBoxLocale->itemData(pos).toString();
     m_pConfig->set(ConfigKey("[Config]","Locale"), ConfigValue(newLocale));
@@ -410,11 +419,11 @@ void DlgPrefControls::slotSetLocale(int pos) {
 
 void DlgPrefControls::slotSetRateRange(int pos)
 {
-    float range = (float)(pos-1)/10.;
-    if (pos==0)
-        range = 0.06f;
-    if (pos==1)
-        range = 0.08f;
+    double range = static_cast<double>(pos-1) / 10.0;
+    if (pos == 0)
+        range = 0.06;
+    if (pos == 1)
+        range = 0.08;
 
     // Set rate range for every group
     foreach (ControlObjectThread* pControl, m_rateRangeControls) {
@@ -487,6 +496,10 @@ void DlgPrefControls::slotSetAutoDjIgnoreTime(const QTime &a_rTime) {
     QString str = a_rTime.toString(autoDjIgnoreTimeEdit->displayFormat());
     m_pConfig->set(ConfigKey("[Auto DJ]", "IgnoreTime"),str);
 #endif // __AUTODJCRATES__
+}
+
+void DlgPrefControls::slotSetStartInFullscreen(int index) {
+    m_pConfig->set(ConfigKey("[Config]", "StartInFullscreen"), index);
 }
 
 void DlgPrefControls::slotSetTooltips(int) {
@@ -615,135 +628,6 @@ void DlgPrefControls::slotApply()
 
 }
 
-void DlgPrefControls::slotSetFrameRate(int frameRate) {
-    WaveformWidgetFactory::instance()->setFrameRate(frameRate);
-}
-
-void DlgPrefControls::slotSetWaveformType(int index) {
-    if (WaveformWidgetFactory::instance()->setWidgetTypeFromHandle(index)) {
-        // It was changed to a valid type. Previously we rebooted the Mixxx GUI
-        // here but now we can update the waveforms on the fly.
-    }
-}
-
-void DlgPrefControls::slotSetWaveformOverviewType(int index) {
-    m_pConfig->set(ConfigKey("[Waveform]","WaveformOverviewType"), ConfigValue(index));
-    m_mixxx->rebootMixxxView();
-}
-
-void DlgPrefControls::slotSetDefaultZoom(int index) {
-    WaveformWidgetFactory::instance()->setDefaultZoom( index + 1);
-}
-
-void DlgPrefControls::slotSetZoomSynchronization(bool checked) {
-    WaveformWidgetFactory::instance()->setZoomSync(checked);
-}
-
-void DlgPrefControls::slotSetVisualGainAll(double gain) {
-    WaveformWidgetFactory::instance()->setVisualGain(WaveformWidgetFactory::All,gain);
-}
-
-void DlgPrefControls::slotSetVisualGainLow(double gain) {
-    WaveformWidgetFactory::instance()->setVisualGain(WaveformWidgetFactory::Low,gain);
-}
-
-void DlgPrefControls::slotSetVisualGainMid(double gain) {
-    WaveformWidgetFactory::instance()->setVisualGain(WaveformWidgetFactory::Mid,gain);
-}
-
-void DlgPrefControls::slotSetVisualGainHigh(double gain) {
-    WaveformWidgetFactory::instance()->setVisualGain(WaveformWidgetFactory::High,gain);
-}
-
-void DlgPrefControls::slotSetNormalizeOverview( bool normalize) {
-    WaveformWidgetFactory::instance()->setOverviewNormalized(normalize);
-}
-
-void DlgPrefControls::slotShow() {
-    m_timer = startTimer(100); //refresh actual frame rate every 100 ms
-}
-
-void DlgPrefControls::slotHide() {
-    if (m_timer != -1) {
-        killTimer(m_timer);
-    }
-}
-
-void DlgPrefControls::timerEvent(QTimerEvent * /*event*/) {
-    //Just to refresh actual framrate any time the controller is modified
-    frameRateAverage->setText(QString::number(
-        WaveformWidgetFactory::instance()->getActualFrameRate()));
-}
-
-void DlgPrefControls::initWaveformControl()
-{
-    waveformTypeComboBox->clear();
-    WaveformWidgetFactory* factory = WaveformWidgetFactory::instance();
-
-    if (factory->isOpenGLAvailable())
-        openGlStatusIcon->setText(factory->getOpenGLVersion());
-    else
-        openGlStatusIcon->setText(tr("OpenGL not available"));
-
-    WaveformWidgetType::Type currentType = factory->getType();
-    int currentIndex = -1;
-
-    std::vector<WaveformWidgetAbstractHandle> handles = factory->getAvailableTypes();
-    for (unsigned int i = 0; i < handles.size(); i++) {
-        waveformTypeComboBox->addItem(handles[i].getDisplayName());
-        if (handles[i].getType() == currentType)
-            currentIndex = i;
-    }
-
-    if (currentIndex != -1)
-        waveformTypeComboBox->setCurrentIndex(currentIndex);
-
-    frameRateSpinBox->setValue(factory->getFrameRate());
-
-    synchronizeZoomCheckBox->setChecked( factory->isZoomSync());
-    allVisualGain->setValue(factory->getVisualGain(WaveformWidgetFactory::All));
-    lowVisualGain->setValue(factory->getVisualGain(WaveformWidgetFactory::Low));
-    midVisualGain->setValue(factory->getVisualGain(WaveformWidgetFactory::Mid));
-    highVisualGain->setValue(factory->getVisualGain(WaveformWidgetFactory::High));
-    normalizeOverviewCheckBox->setChecked(factory->isOverviewNormalized());
-
-    for( int i = WaveformWidgetRenderer::s_waveformMinZoom;
-         i <= WaveformWidgetRenderer::s_waveformMaxZoom;
-         i++) {
-        defaultZoomComboBox->addItem(QString::number( 100/double(i),'f',1) + " %");
-    }
-    defaultZoomComboBox->setCurrentIndex( factory->getDefaultZoom() - 1);
-
-    connect(frameRateSpinBox, SIGNAL(valueChanged(int)),
-            this, SLOT(slotSetFrameRate(int)));
-    connect(waveformTypeComboBox, SIGNAL(currentIndexChanged(int)),
-            this, SLOT(slotSetWaveformType(int)));
-    connect(defaultZoomComboBox, SIGNAL(currentIndexChanged(int)),
-            this, SLOT(slotSetDefaultZoom(int)));
-    connect(synchronizeZoomCheckBox, SIGNAL(clicked(bool)),
-            this, SLOT(slotSetZoomSynchronization(bool)));
-    connect(allVisualGain,SIGNAL(valueChanged(double)),
-            this,SLOT(slotSetVisualGainAll(double)));
-    connect(lowVisualGain,SIGNAL(valueChanged(double)),
-            this,SLOT(slotSetVisualGainLow(double)));
-    connect(midVisualGain,SIGNAL(valueChanged(double)),
-            this,SLOT(slotSetVisualGainMid(double)));
-    connect(highVisualGain,SIGNAL(valueChanged(double)),
-            this,SLOT(slotSetVisualGainHigh(double)));
-    connect(normalizeOverviewCheckBox,SIGNAL(toggled(bool)),
-            this,SLOT(slotSetNormalizeOverview(bool)));
-
-    // Waveform overview init
-    waveformOverviewComboBox->addItem( tr("Filtered") ); // "0"
-    waveformOverviewComboBox->addItem( tr("HSV") ); // "1"
-
-    // By default we set filtered woverview = "0"
-    waveformOverviewComboBox->setCurrentIndex(
-            m_pConfig->getValueString(ConfigKey("[Waveform]","WaveformOverviewType"), "0").toInt());
-    connect(waveformOverviewComboBox,SIGNAL(currentIndexChanged(int)),
-            this,SLOT(slotSetWaveformOverviewType(int)));
-}
-
 //Returns TRUE if skin fits to screen resolution, FALSE otherwise
 bool DlgPrefControls::checkSkinResolution(QString skin)
 {
@@ -757,4 +641,51 @@ bool DlgPrefControls::checkSkinResolution(QString skin)
     QString skinHeight = res.right(res.count()-skinWidth.count()-1);
 
     return !(skinWidth.toInt() > screenWidth || skinHeight.toInt() > screenHeight);
+}
+
+void DlgPrefControls::slotNumDecksChanged(double new_count) {
+    int numdecks = static_cast<int>(new_count);
+    if (numdecks <= m_iNumConfiguredDecks) {
+        // TODO(owilliams): If we implement deck deletion, shrink the size of configured decks.
+        return;
+    }
+
+    for (int i = m_iNumConfiguredDecks; i < numdecks; ++i) {
+        QString group = PlayerManager::groupForDeck(i);
+        m_rateControls.push_back(new ControlObjectThread(
+                group, "rate"));
+        m_rateRangeControls.push_back(new ControlObjectThread(
+                group, "rateRange"));
+        m_rateDirControls.push_back(new ControlObjectThread(
+                group, "rate_dir"));
+        m_cueControls.push_back(new ControlObjectThread(
+                group, "cue_mode"));
+    }
+
+    m_iNumConfiguredDecks = numdecks;
+    slotSetRateDir(m_pConfig->getValueString(ConfigKey("[Controls]","RateDir")).toInt());
+    slotSetRateRange(m_pConfig->getValueString(ConfigKey("[Controls]","RateRange")).toInt());
+}
+
+void DlgPrefControls::slotNumSamplersChanged(double new_count) {
+    int numsamplers = static_cast<int>(new_count);
+    if (numsamplers <= m_iNumConfiguredSamplers) {
+        return;
+    }
+
+    for (int i = m_iNumConfiguredSamplers; i < numsamplers; ++i) {
+        QString group = PlayerManager::groupForSampler(i);
+        m_rateControls.push_back(new ControlObjectThread(
+                group, "rate"));
+        m_rateRangeControls.push_back(new ControlObjectThread(
+                group, "rateRange"));
+        m_rateDirControls.push_back(new ControlObjectThread(
+                group, "rate_dir"));
+        m_cueControls.push_back(new ControlObjectThread(
+                group, "cue_mode"));
+    }
+
+    m_iNumConfiguredSamplers = numsamplers;
+    slotSetRateDir(m_pConfig->getValueString(ConfigKey("[Controls]","RateDir")).toInt());
+    slotSetRateRange(m_pConfig->getValueString(ConfigKey("[Controls]","RateRange")).toInt());
 }

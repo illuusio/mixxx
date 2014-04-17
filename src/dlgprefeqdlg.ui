@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>568</width>
-    <height>520</height>
+    <width>529</width>
+    <height>434</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -15,11 +15,27 @@
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
-    <layout class="QHBoxLayout">
+    <layout class="QVBoxLayout" name="verticalLayout_2">
+     <item>
+      <widget class="QCheckBox" name="CheckBoxEnbEQ">
+       <property name="toolTip">
+        <string>Disable Mixxx` internal equalizers if you prefer to use equalizers on connected hardware mixers, and to lower CPU utilization.</string>
+       </property>
+       <property name="text">
+        <string>Enable Equalizers</string>
+       </property>
+       <property name="checked">
+        <bool>false</bool>
+       </property>
+      </widget>
+     </item>
      <item>
       <widget class="QCheckBox" name="CheckBoxLoFi">
+       <property name="toolTip">
+        <string>Use this option if you prefer lower CPU utilization over better sound.</string>
+       </property>
        <property name="text">
-        <string>Static EQs (for slower CPUs)</string>
+        <string>Use Static Equalizers</string>
        </property>
       </widget>
      </item>
@@ -47,7 +63,7 @@
       <item row="0" column="4">
        <widget class="QLabel" name="TextHiEQ">
         <property name="text">
-         <string>textLabel1</string>
+         <string notr="true">textLabel1</string>
         </property>
         <property name="wordWrap">
          <bool>false</bool>
@@ -172,7 +188,7 @@
       <item row="0" column="1">
        <widget class="QLabel" name="TextLoEQ">
         <property name="text">
-         <string>textLabel2</string>
+         <string notr="true">textLabel2</string>
         </property>
         <property name="wordWrap">
          <bool>false</bool>
@@ -278,30 +294,6 @@
       </item>
      </layout>
     </widget>
-   </item>
-   <item>
-    <layout class="QHBoxLayout">
-     <item>
-      <spacer>
-       <property name="orientation">
-        <enum>Qt::Horizontal</enum>
-       </property>
-       <property name="sizeHint" stdset="0">
-        <size>
-         <width>40</width>
-         <height>20</height>
-        </size>
-       </property>
-      </spacer>
-     </item>
-     <item>
-      <widget class="QPushButton" name="PushButtonReset">
-       <property name="text">
-        <string>Reset to Defaults</string>
-       </property>
-      </widget>
-     </item>
-    </layout>
    </item>
    <item>
     <spacer>

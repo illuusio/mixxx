@@ -14,7 +14,9 @@
 #include "waveform/renderers/waveformrenderbeat.h"
 #include "sharedglcontext.h"
 
-QtWaveformWidget::QtWaveformWidget( const char* group, QWidget* parent)
+#include "util/performancetimer.h"
+
+QtWaveformWidget::QtWaveformWidget(const char* group, QWidget* parent)
         : QGLWidget(parent, SharedGLContext::getWidget()),
           WaveformWidgetAbstract(group) {
     addRenderer<WaveformRenderBackground>();
@@ -46,14 +48,23 @@ void QtWaveformWidget::castToQWidget() {
     m_widget = static_cast<QWidget*>(static_cast<QGLWidget*>(this));
 }
 
-void QtWaveformWidget::paintEvent( QPaintEvent* event) {
-    if (QGLContext::currentContext() != context()) {
-        makeCurrent();
-    }
-    QPainter painter(this);
-    draw(&painter, event);
+void QtWaveformWidget::paintEvent(QPaintEvent* event) {
+    Q_UNUSED(event);
 }
 
-void QtWaveformWidget::postRender() {
-    QGLWidget::swapBuffers();
+int QtWaveformWidget::render() {
+    PerformanceTimer timer;
+    int t1;
+    //int t2, t3;
+    timer.start();
+    // QPainter makes QGLContext::currentContext() == context()
+    // this may delayed until previous buffer swap finished
+    QPainter painter(this);
+    t1 = timer.restart();
+    draw(&painter, NULL);
+    //t2 = timer.restart();
+    //glFinish();
+    //t3 = timer.restart();
+    //qDebug() << "GLVSyncTestWidget "<< t1 << t2 << t3;
+    return t1 / 1000; // return timer for painter setup
 }

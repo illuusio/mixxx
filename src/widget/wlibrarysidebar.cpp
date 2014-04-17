@@ -1,13 +1,17 @@
-#include <QtCore>
-#include <QtGui>
+#include "widget/wlibrarysidebar.h"
+
 #include <QHeaderView>
+#include <QUrl>
+#include <QtDebug>
+#include <QMimeData>
 
 #include "library/sidebarmodel.h"
-#include "widget/wlibrarysidebar.h"
 
 const int expand_time = 250;
 
-WLibrarySidebar::WLibrarySidebar(QWidget* parent) : QTreeView(parent) {
+WLibrarySidebar::WLibrarySidebar(QWidget* parent)
+        : QTreeView(parent),
+          WBaseWidget(this) {
     //Set some properties
     setHeaderHidden(true);
     setSelectionMode(QAbstractItemView::SingleSelection);
@@ -107,7 +111,6 @@ void WLibrarySidebar::timerEvent(QTimerEvent *event) {
 // Drag-and-drop "drop" event. Occurs when something is dropped onto the track sources view
 void WLibrarySidebar::dropEvent(QDropEvent * event) {
     if (event->mimeData()->hasUrls()) {
-        QList<QUrl> urls(event->mimeData()->urls());
         // Drag and drop within this widget
         if ((event->source() == this)
                 && (event->possibleActions() & Qt::MoveAction)) {
@@ -123,6 +126,7 @@ void WLibrarySidebar::dropEvent(QDropEvent * event) {
                 QModelIndex destIndex = indexAt(event->pos());
                 // event->source() will return NULL if something is droped from
                 // a different application
+                QList<QUrl> urls(event->mimeData()->urls());
                 if (sidebarModel->dropAccept(destIndex, urls, event->source())) {
                     event->acceptProposedAction();
                 } else {
@@ -137,32 +141,41 @@ void WLibrarySidebar::dropEvent(QDropEvent * event) {
     }
 }
 
-void WLibrarySidebar::keyPressEvent(QKeyEvent* event) {
-    if (event->key() == Qt::Key_Return)
-    {
-        QModelIndexList selectedIndices = this->selectionModel()->selectedRows();
-        if (selectedIndices.size() > 0) {
-            QModelIndex index = selectedIndices.at(0);
-            emit(pressed(index));
-            //Expand or collapse the item as necessary.
-            setExpanded(index, !isExpanded(index));
-        }
+
+void WLibrarySidebar::toggleSelectedItem() {
+    QModelIndexList selectedIndices = this->selectionModel()->selectedRows();
+    if (selectedIndices.size() > 0) {
+        QModelIndex index = selectedIndices.at(0);
+        // Activate the item so its content shows in the main library.
+        emit(pressed(index));
+        // Expand or collapse the item as necessary.
+        setExpanded(index, !isExpanded(index));
     }
-    else if (event->key() == Qt::Key_Down || event->key() == Qt::Key_Up)
-    {
-        //Let the tree view move up and down for us...
+}
+
+void WLibrarySidebar::keyPressEvent(QKeyEvent* event) {
+    if (event->key() == Qt::Key_Return) {
+        toggleSelectedItem();
+        return;
+    } else if (event->key() == Qt::Key_Down || event->key() == Qt::Key_Up) {
+        // Let the tree view move up and down for us.
         QTreeView::keyPressEvent(event);
-        //But force the index to be activated/clicked after the selection
-        //changes. (Saves you from having to push "enter" after changing the selection.)
+
+        // But force the index to be activated/clicked after the selection
+        // changes. (Saves you from having to push "enter" after changing the
+        // selection.)
         QModelIndexList selectedIndices = this->selectionModel()->selectedRows();
+
         //Note: have to get the selected indices _after_ QTreeView::keyPressEvent()
         if (selectedIndices.size() > 0) {
             QModelIndex index = selectedIndices.at(0);
             emit(pressed(index));
         }
+        return;
     }
-    else
-        QTreeView::keyPressEvent(event);
+
+    // Fall through to deafult handler.
+    QTreeView::keyPressEvent(event);
 }
 
 void WLibrarySidebar::selectIndex(const QModelIndex& index) {
@@ -174,4 +187,11 @@ void WLibrarySidebar::selectIndex(const QModelIndex& index) {
         expand(index.parent());
     }
     scrollTo(index);
+}
+
+bool WLibrarySidebar::event(QEvent* pEvent) {
+    if (pEvent->type() == QEvent::ToolTip) {
+        updateTooltip();
+    }
+    return QTreeView::event(pEvent);
 }

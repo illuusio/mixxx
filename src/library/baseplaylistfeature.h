@@ -2,6 +2,13 @@
 #define BASEPLAYLISTFEATURE_H
 
 #include <QAction>
+#include <QUrl>
+#include <QObject>
+#include <QModelIndex>
+#include <QAction>
+#include <QList>
+#include <QPair>
+#include <QString>
 
 #include "library/libraryfeature.h"
 #include "library/dao/playlistdao.h"
@@ -34,7 +41,7 @@ class BasePlaylistFeature : public LibraryFeature {
   public slots:
     virtual void activate();
     virtual void activateChild(const QModelIndex& index);
-    virtual void htmlLinkClicked(const QUrl & link);
+    virtual void htmlLinkClicked(const QUrl& link);
 
     virtual void slotPlaylistTableChanged(int playlistId) = 0;
     void slotPlaylistTableRenamed(int playlistId, QString a_strName);
@@ -57,6 +64,8 @@ class BasePlaylistFeature : public LibraryFeature {
     virtual void buildPlaylistList() = 0;
     virtual void decorateChild(TreeItem *pChild, int playlist_id) = 0;
     virtual void addToAutoDJ(bool bTop);
+
+    int playlistIdFromIndex(QModelIndex index);
 
     ConfigObject<ConfigValue>* m_pConfig;
     TrackCollection* m_pTrackCollection;

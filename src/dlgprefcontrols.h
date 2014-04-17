@@ -24,11 +24,12 @@
 #include "configobject.h"
 #include "preferences/dlgpreferencepage.h"
 
+class ControlObjectSlave;
 class ControlObjectThread;
 class ControlPotmeter;
 class SkinLoader;
 class PlayerManager;
-class MixxxApp;
+class MixxxMainWindow;
 class ControlObject;
 
 /**
@@ -38,7 +39,7 @@ class ControlObject;
 class DlgPrefControls : public DlgPreferencePage, public Ui::DlgPrefControlsDlg  {
     Q_OBJECT
   public:
-    DlgPrefControls(QWidget *parent, MixxxApp *mixxx,
+    DlgPrefControls(QWidget *parent, MixxxMainWindow *mixxx,
                     SkinLoader* pSkinLoader, PlayerManager* pPlayerManager,
                     ConfigObject<ConfigValue> *pConfig);
     virtual ~DlgPrefControls();
@@ -46,8 +47,7 @@ class DlgPrefControls : public DlgPreferencePage, public Ui::DlgPrefControlsDlg 
   public slots:
     void slotUpdate();
     void slotApply();
-    void slotShow();
-    void slotHide();
+    void slotResetToDefaults();
 
     void slotSetRateRange(int pos);
     void slotSetRateDir(int pos);
@@ -71,37 +71,29 @@ class DlgPrefControls : public DlgPreferencePage, public Ui::DlgPrefControlsDlg 
     void slotSetRateRamp(bool);
     void slotSetRateRampSensitivity(int);
     void slotSetLocale(int);
+    void slotSetStartInFullscreen(int index);
 
-
-    void slotSetFrameRate(int frameRate);
-    void slotSetWaveformType(int index);
-    void slotSetWaveformOverviewType(int index);
-    void slotSetDefaultZoom(int index);
-    void slotSetZoomSynchronization(bool checked);
-    void slotSetVisualGainAll(double gain);
-    void slotSetVisualGainLow(double gain);
-    void slotSetVisualGainMid(double gain);
-    void slotSetVisualGainHigh(double gain);
-    void slotSetNormalizeOverview( bool normalize);
-
-  protected:
-    void timerEvent(QTimerEvent *);
+    void slotNumDecksChanged(double);
+    void slotNumSamplersChanged(double);
 
   private:
-    void initWaveformControl();
     void notifyRebootNecessary();
     bool checkSkinResolution(QString skin);
 
     ConfigObject<ConfigValue>* m_pConfig;
-    int m_timer;
     ControlObject* m_pControlPositionDisplay;
+    ControlObjectSlave* m_pNumDecks;
+    ControlObjectSlave* m_pNumSamplers;
     QList<ControlObjectThread*> m_cueControls;
     QList<ControlObjectThread*> m_rateControls;
     QList<ControlObjectThread*> m_rateDirControls;
     QList<ControlObjectThread*> m_rateRangeControls;
-    MixxxApp *m_mixxx;
+    MixxxMainWindow *m_mixxx;
     SkinLoader* m_pSkinLoader;
     PlayerManager* m_pPlayerManager;
+
+    int m_iNumConfiguredDecks;
+    int m_iNumConfiguredSamplers;
 };
 
 #endif

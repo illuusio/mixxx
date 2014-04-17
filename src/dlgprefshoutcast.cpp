@@ -18,12 +18,11 @@
  ***************************************************************************/
 
 #include <QtDebug>
-#include <QtCore>
-#include <QtGui>
 
 #include "defs_urls.h"
 #include "dlgprefshoutcast.h"
 #include "shoutcast/defs_shoutcast.h"
+#include "controlobjectthread.h"
 
 DlgPrefShoutcast::DlgPrefShoutcast(QWidget *parent, ConfigObject<ConfigValue> *_config)
         : DlgPreferencePage(parent),
@@ -39,7 +38,7 @@ DlgPrefShoutcast::DlgPrefShoutcast(QWidget *parent, ConfigObject<ConfigValue> *_
 
     //Server type combobox
     comboBoxServerType->addItem(tr("Icecast 2"), SHOUTCAST_SERVER_ICECAST2);
-    comboBoxServerType->addItem(tr("Shoutcast"), SHOUTCAST_SERVER_SHOUTCAST);
+    comboBoxServerType->addItem(tr("Shoutcast 1"), SHOUTCAST_SERVER_SHOUTCAST);
     comboBoxServerType->addItem(tr("Icecast 1"), SHOUTCAST_SERVER_ICECAST1);
 
     int tmp_index = comboBoxServerType->findData(m_pConfig->getValueString(
@@ -168,16 +167,25 @@ DlgPrefShoutcast::DlgPrefShoutcast(QWidget *parent, ConfigObject<ConfigValue> *_
     custom_title->setText(m_pConfig->getValueString(
         ConfigKey(SHOUTCAST_PREF_KEY,"custom_title")));
 
+    //Metadata format
+    tmp_string = m_pConfig->getValueString(
+        ConfigKey(SHOUTCAST_PREF_KEY,"metadata_format"));
+    if (tmp_string.isEmpty())
+        tmp_string = tr("$artist - $title");
+    metadata_format->setText(tmp_string);
+
     slotApply();
 }
 
-DlgPrefShoutcast::~DlgPrefShoutcast()
-{
+DlgPrefShoutcast::~DlgPrefShoutcast() {
     delete m_pUpdateShoutcastFromPrefs;
 }
 
-void DlgPrefShoutcast::slotUpdate()
-{
+void DlgPrefShoutcast::slotResetToDefaults() {
+    // TODO(XXX): Set the defaults.
+}
+
+void DlgPrefShoutcast::slotUpdate() {
     enableLiveBroadcasting->setChecked((bool)m_pConfig->getValueString(
         ConfigKey(SHOUTCAST_PREF_KEY,"enabled")).toInt());
 }
@@ -222,7 +230,8 @@ void DlgPrefShoutcast::slotApply()
     m_pConfig->set(ConfigKey(SHOUTCAST_PREF_KEY, "enable_metadata"),ConfigValue(enableCustomMetadata->isChecked()));
     m_pConfig->set(ConfigKey(SHOUTCAST_PREF_KEY, "custom_artist"), ConfigValue(custom_artist->text()));
     m_pConfig->set(ConfigKey(SHOUTCAST_PREF_KEY, "custom_title"),  ConfigValue(custom_title->text()));
+    m_pConfig->set(ConfigKey(SHOUTCAST_PREF_KEY, "metadata_format"), ConfigValue(metadata_format->text()));
 
     //Tell the EngineShoutcast object to update with these values by toggling this control object.
-    m_pUpdateShoutcastFromPrefs->slotSet(1.0f);
+    m_pUpdateShoutcastFromPrefs->slotSet(1.0);
 }

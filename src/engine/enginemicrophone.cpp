@@ -7,125 +7,99 @@
 
 #include "configobject.h"
 #include "sampleutil.h"
+#include "effects/effectsmanager.h"
+#include "engine/effects/engineeffectsmanager.h"
 
-EngineMicrophone::EngineMicrophone(const char* pGroup)
+EngineMicrophone::EngineMicrophone(const char* pGroup, EffectsManager* pEffectsManager)
         : EngineChannel(pGroup, EngineChannel::CENTER),
-          m_clipping(pGroup),
+          m_pEngineEffectsManager(pEffectsManager ? pEffectsManager->getEngineEffectsManager() : NULL),
           m_vuMeter(pGroup),
           m_pEnabled(new ControlObject(ConfigKey(pGroup, "enabled"))),
-          m_pControlTalkover(new ControlPushButton(ConfigKey(pGroup, "talkover"))),
-          m_pConversionBuffer(SampleUtil::alloc(MAX_BUFFER_LEN)),
           // Need a +1 here because the CircularBuffer only allows its size-1
           // items to be held at once (it keeps a blank spot open persistently)
-          m_sampleBuffer(MAX_BUFFER_LEN+1) {
-    m_pControlTalkover->setButtonMode(ControlPushButton::POWERWINDOW);
+          m_sampleBuffer(NULL),
+          m_wasActive(false) {
+    if (pEffectsManager != NULL) {
+        pEffectsManager->registerGroup(getGroup());
+    }
+
+    // You normally don't expect to hear yourself in the headphones. Default PFL
+    // setting for mic to false. User can over-ride by setting the "pfl" or
+    // "master" controls.
+    setMaster(true);
+    setPFL(false);
 }
 
 EngineMicrophone::~EngineMicrophone() {
     qDebug() << "~EngineMicrophone()";
-    SampleUtil::free(m_pConversionBuffer);
     delete m_pEnabled;
-    delete m_pControlTalkover;
 }
 
 bool EngineMicrophone::isActive() {
     bool enabled = m_pEnabled->get() > 0.0;
-    return enabled && !m_sampleBuffer.isEmpty();
+    if (enabled && m_sampleBuffer) {
+        m_wasActive = true;
+    } else if (m_wasActive) {
+        m_vuMeter.reset();
+        m_wasActive = false;
+    }
+    return m_wasActive;
 }
 
-bool EngineMicrophone::isPFL() {
-    // You normally don't expect to hear yourself in the headphones
-    return false;
-}
-
-bool EngineMicrophone::isMaster() {
-    return true;
-}
-
-void EngineMicrophone::onInputConnected(AudioInput input) {
-    if (input.getType() != AudioPath::MICROPHONE ||
-        AudioInput::channelsNeededForType(input.getType()) != 1) {
+void EngineMicrophone::onInputConfigured(AudioInput input) {
+    if (input.getType() != AudioPath::MICROPHONE) {
         // This is an error!
-        qWarning() << "EngineMicrophone connected to AudioInput for a non-Microphone type or a non-mono buffer!";
+        qWarning() << "EngineMicrophone connected to AudioInput for a non-Microphone type!";
         return;
     }
-    m_sampleBuffer.clear();
-    m_pEnabled->set(1.0f);
+    m_sampleBuffer = NULL;
+    m_pEnabled->set(1.0);
 }
 
-void EngineMicrophone::onInputDisconnected(AudioInput input) {
-    if (input.getType() != AudioPath::MICROPHONE ||
-        AudioInput::channelsNeededForType(input.getType()) != 1) {
+void EngineMicrophone::onInputUnconfigured(AudioInput input) {
+    if (input.getType() != AudioPath::MICROPHONE) {
         // This is an error!
-        qWarning() << "EngineMicrophone connected to AudioInput for a non-Microphone type or a non-mono buffer!";
+        qWarning() << "EngineMicrophone connected to AudioInput for a non-Microphone type!";
         return;
     }
-    m_sampleBuffer.clear();
-    m_pEnabled->set(0.0f);
+    m_sampleBuffer = NULL;
+    m_pEnabled->set(0.0);
 }
 
-void EngineMicrophone::receiveBuffer(AudioInput input, const short* pBuffer, unsigned int nFrames) {
-
-    if (input.getType() != AudioPath::MICROPHONE ||
-        AudioInput::channelsNeededForType(input.getType()) != 1) {
-        // This is an error!
-        qWarning() << "EngineMicrophone receieved an AudioInput for a non-Microphone type or a non-mono buffer!";
+void EngineMicrophone::receiveBuffer(AudioInput input, const CSAMPLE* pBuffer,
+                                     unsigned int nFrames) {
+    Q_UNUSED(input);
+    Q_UNUSED(nFrames);
+    if (!isTalkover()) {
+        m_sampleBuffer = NULL;
         return;
-    }
-
-    // Use the conversion buffer to both convert from short and double into
-    // stereo.
-
-    // Check that the number of mono frames doesn't exceed MAX_BUFFER_LEN/2
-    // because thats our conversion buffer size.
-    if (nFrames > MAX_BUFFER_LEN / 2) {
-        qWarning() << "Dropping microphone samples because the input buffer is too large.";
-        nFrames = MAX_BUFFER_LEN / 2;
-    }
-
-    // There isn't a suitable SampleUtil method that can do mono->stereo and
-    // short->float in one pass.
-    // SampleUtil::convert(m_pConversionBuffer, pBuffer, iNumSamples);
-    for (unsigned int i = 0; i < nFrames; ++i) {
-        m_pConversionBuffer[i*2 + 0] = pBuffer[i];
-        m_pConversionBuffer[i*2 + 1] = pBuffer[i];
-    }
-
-    // m_pConversionBuffer is now stereo, so double the number of samples
-    const unsigned int iNumSamples = nFrames * 2;
-
-    // TODO(rryan) do we need to verify the input is the one we asked for? Oh well.
-    unsigned int samplesWritten = m_sampleBuffer.write(m_pConversionBuffer, iNumSamples);
-    if (samplesWritten < iNumSamples) {
-        // Buffer overflow. We aren't processing samples fast enough. This
-        // shouldn't happen since the mic spits out samples just as fast as they
-        // come in, right?
-        qWarning() << "ERROR: Buffer overflow in EngineMicrophone. Dropping samples on the floor.";
+    } else {
+        m_sampleBuffer = pBuffer;
     }
 }
 
-void EngineMicrophone::process(const CSAMPLE* pInput, const CSAMPLE* pOutput, const int iBufferSize) {
+void EngineMicrophone::process(const CSAMPLE* pInput, CSAMPLE* pOut, const int iBufferSize) {
     Q_UNUSED(pInput);
-    CSAMPLE* pOut = const_cast<CSAMPLE*>(pOutput);
 
     // If talkover is enabled, then read into the output buffer. Otherwise, skip
     // the appropriate number of samples to throw them away.
-    if (m_pControlTalkover->get() > 0.0f) {
-        int samplesRead = m_sampleBuffer.read(pOut, iBufferSize);
-        if (samplesRead < iBufferSize) {
-            // Buffer underflow. There aren't getting samples fast enough. This
-            // shouldn't happen since PortAudio should feed us samples just as fast
-            // as we consume them, right?
-            qWarning() << "ERROR: Buffer underflow in EngineMicrophone. Playing silence.";
-            SampleUtil::applyGain(pOut + samplesRead, 0.0, iBufferSize - samplesRead);
-        }
+    const CSAMPLE* sampleBuffer = m_sampleBuffer; // save pointer on stack
+    if (isTalkover() && sampleBuffer) {
+        memcpy(pOut, sampleBuffer, iBufferSize * sizeof(pOut[0]));
+        m_sampleBuffer = NULL;
     } else {
-        SampleUtil::applyGain(pOut, 0.0, iBufferSize);
-        m_sampleBuffer.skip(iBufferSize);
+        SampleUtil::clear(pOut, iBufferSize);
     }
 
-    // Apply clipping
-    m_clipping.process(pOut, pOut, iBufferSize);
+    if (m_pEngineEffectsManager != NULL) {
+        // Process effects enabled for this channel
+        GroupFeatureState features;
+        // This is out of date by a callback but some effects will want the RMS
+        // volume.
+        m_vuMeter.collectFeatures(&features);
+        m_pEngineEffectsManager->process(getGroup(), pOut, pOut, iBufferSize,
+                                         features);
+    }
     // Update VU meter
     m_vuMeter.process(pOut, pOut, iBufferSize);
 }

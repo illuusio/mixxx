@@ -38,6 +38,7 @@ class DlgPrefEQ : public DlgPreferencePage, public Ui::DlgPrefEQDlg  {
 
   public slots:
     void slotLoFiChanged();
+    void slotEnaEQChanged();
     /** Update Hi EQ **/
     void slotUpdateHiEQ();
     /** Update Lo EQ **/
@@ -45,12 +46,10 @@ class DlgPrefEQ : public DlgPreferencePage, public Ui::DlgPrefEQDlg  {
     /** Apply changes to widget */
     void slotApply();
     void slotUpdate();
+    void slotResetToDefaults();
 
   signals:
     void apply(const QString &);
-
-  private slots:
-    void reset();
 
   private:
     void loadSettings();
@@ -59,11 +58,10 @@ class DlgPrefEQ : public DlgPreferencePage, public Ui::DlgPrefEQDlg  {
     int getSliderPosition(double eqFreq, int minimum, int maximum);
     void validate_levels();
 
-#ifndef __LOFI__
     ControlObjectThread m_COTLoFreq;
     ControlObjectThread m_COTHiFreq;
     ControlObjectThread m_COTLoFi;
-#endif
+    ControlObjectThread m_COTEnableEq;
     ConfigObject<ConfigValue>* m_pConfig;
     double m_lowEqFreq, m_highEqFreq;
 };

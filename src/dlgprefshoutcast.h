@@ -25,13 +25,14 @@
 #include "ui_dlgprefshoutcastdlg.h"
 #include "controlobject.h"
 #include "configobject.h"
-#include "controlobjectthreadmain.h"
 #include "shoutcast/defs_shoutcast.h"
 #include "preferences/dlgpreferencepage.h"
 
 /**
   *@author John Sully
   */
+
+class ControlObjectThread;
 
 class DlgPrefShoutcast : public DlgPreferencePage, public Ui::DlgPrefShoutcastDlg  {
     Q_OBJECT
@@ -43,6 +44,7 @@ class DlgPrefShoutcast : public DlgPreferencePage, public Ui::DlgPrefShoutcastDl
     /** Apply changes to widget */
     void slotApply();
     void slotUpdate();
+    void slotResetToDefaults();
 
   signals:
     void apply(const QString &);

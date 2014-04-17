@@ -15,15 +15,15 @@
 *                                                                         *
 ***************************************************************************/
 
-#include <QtCore>
-#include <QtGui>
 #include <QFileDialog>
+#include <QDesktopServices>
 
 #include "dlgprefrecord.h"
 #include "recording/defs_recording.h"
 #include "controlobject.h"
-#include "controlobjectthreadmain.h"
 #include "encoder/encoder.h"
+#include "controlobjectthread.h"
+#include "util/sandbox.h"
 
 DlgPrefRecord::DlgPrefRecord(QWidget* parent, ConfigObject<ConfigValue>* pConfig)
         : DlgPreferencePage(parent),
@@ -48,10 +48,7 @@ DlgPrefRecord::DlgPrefRecord(QWidget* parent, ConfigObject<ConfigValue>* pConfig
     if (recordingsPath == "") {
         // Initialize recordings path in config to old default path.
         // Do it here so we show current value in UI correctly.
-        QString musicDir = m_pConfig->getValueString(ConfigKey("[Playlist]", "Directory"));
-        if (musicDir.isEmpty()) {
-            musicDir = QDesktopServices::storageLocation(QDesktopServices::MusicLocation);
-        }
+        QString musicDir = QDesktopServices::storageLocation(QDesktopServices::MusicLocation);
         QDir recordDir(musicDir + "/Mixxx/Recordings");
         recordingsPath = recordDir.absolutePath();
     }
@@ -214,6 +211,10 @@ void DlgPrefRecord::slotRecordPathChange() {
     slotApply();
 }
 
+void DlgPrefRecord::slotResetToDefaults() {
+    // TODO(XXX): Set the defaults.
+}
+
 // This function updates/refreshes the contents of this dialog.
 void DlgPrefRecord::slotUpdate() {
 
@@ -235,10 +236,19 @@ void DlgPrefRecord::slotUpdate() {
 }
 
 void DlgPrefRecord::slotBrowseRecordingsDir() {
-    QString fd = QFileDialog::getExistingDirectory(this, tr("Choose recordings directory"),
-                                            m_pConfig->getValueString(
-                                                        ConfigKey(RECORDING_PREF_KEY, "Directory")));
+    QString fd = QFileDialog::getExistingDirectory(
+            this, tr("Choose recordings directory"),
+            m_pConfig->getValueString(ConfigKey(RECORDING_PREF_KEY,
+                                                "Directory")));
+
     if (fd != "") {
+        // The user has picked a new directory via a file dialog. This means the
+        // system sandboxer (if we are sandboxed) has granted us permission to
+        // this folder. Create a security bookmark while we have permission so
+        // that we can access the folder on future runs. We need to canonicalize
+        // the path so we first wrap the directory string with a QDir.
+        QDir directory(fd);
+        Sandbox::createSecurityToken(directory);
         LineEditRecordings->setText(fd);
     }
 }

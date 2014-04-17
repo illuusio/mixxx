@@ -24,24 +24,22 @@ class DlgPrefBeats : public DlgPreferencePage, public Ui::DlgBeatsDlg {
     // Apply changes to widget
     void slotApply();
     void slotUpdate();
+    void slotResetToDefaults();
 
   private slots:
     void pluginSelected(int i);
     void analyserEnabled(int i);
     void fixedtempoEnabled(int i);
     void offsetEnabled(int i);
-    void setDefaults();
     void fastAnalysisEnabled(int i);
     void minBpmRangeChanged(int value);
     void maxBpmRangeChanged(int value);
     void slotReanalyzeChanged(int value);
 
-  signals:
-    void apply(const QString &);
-
   private:
     void populate();
     void loadSettings();
+
     // Pointer to config object
     ConfigObject<ConfigValue>* m_pconfig;
     QList<QString> m_listName;

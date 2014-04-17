@@ -1,12 +1,15 @@
-#include "woverviewhsv.h"
+#include "widget/woverviewhsv.h"
+
+#include <QPainter>
+#include <QColor>
 
 #include "util/timer.h"
 
 #include "waveform/waveform.h"
 
 WOverviewHSV::WOverviewHSV(const char* pGroup,
-        ConfigObject<ConfigValue>* pConfig, QWidget * parent)
-    : WOverview(pGroup, pConfig, parent)  {
+                           ConfigObject<ConfigValue>* pConfig, QWidget* parent)
+        : WOverview(pGroup, pConfig, parent)  {
 }
 
 bool WOverviewHSV::drawNextPixmapPart() {
@@ -60,9 +63,11 @@ bool WOverviewHSV::drawNextPixmapPart() {
     QPainter painter(m_pWaveformSourceImage);
     painter.translate(0.0,(double)m_pWaveformSourceImage->height()/2.0);
 
-    // Get HSV of low color
-    double h,s,v;
-    m_signalColors.getLowColor().getHsvF(&h,&s,&v);
+    // Get HSV of low color. NOTE(rryan): On ARM, qreal is float so it's
+    // important we use qreal here and not double or float or else we will get
+    // build failures on ARM.
+    qreal h, s, v;
+    m_signalColors.getLowColor().getHsvF(&h, &s, &v);
 
     QColor color;
     float lo, hi, total;

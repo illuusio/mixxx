@@ -13,7 +13,7 @@
  *                                                                         *
  ***************************************************************************/
 
-#include <QDebug>
+#include <QtDebug>
 #include <QMessageBox>
 #include "dlgprefsound.h"
 #include "dlgprefsounditem.h"
@@ -22,6 +22,7 @@
 #include "soundmanager.h"
 #include "sounddevice.h"
 #include "util/rlimit.h"
+#include "controlobjectslave.h"
 
 /**
  * Construct a new sound preferences pane. Initializes and populates all the
@@ -34,16 +35,11 @@ DlgPrefSound::DlgPrefSound(QWidget* pParent, SoundManager* pSoundManager,
           m_pPlayerManager(pPlayerManager),
           m_pConfig(pConfig),
           m_settingsModified(false),
-          m_loading(false),
-          m_forceApply(false) {
+          m_loading(false) {
     setupUi(this);
 
     connect(m_pSoundManager, SIGNAL(devicesUpdated()),
             this, SLOT(refreshDevices()));
-
-    applyButton->setEnabled(false);
-    connect(applyButton, SIGNAL(clicked()),
-            this, SLOT(slotApply()));
 
     apiComboBox->clear();
     apiComboBox->addItem(tr("None"), "None");
@@ -56,7 +52,7 @@ DlgPrefSound::DlgPrefSound(QWidget* pParent, SoundManager* pSoundManager,
         if (srate > 0) {
             // no ridiculous sample rate values. prohibiting zero means
             // avoiding a potential div-by-0 error in ::updateLatencies
-            sampleRateComboBox->addItem(QString(tr("%1 Hz")).arg(srate), srate);
+            sampleRateComboBox->addItem(tr("%1 Hz").arg(srate), srate);
         }
     }
     connect(sampleRateComboBox, SIGNAL(currentIndexChanged(int)),
@@ -65,6 +61,14 @@ DlgPrefSound::DlgPrefSound(QWidget* pParent, SoundManager* pSoundManager,
             this, SLOT(updateAudioBufferSizes(int)));
     connect(audioBufferComboBox, SIGNAL(currentIndexChanged(int)),
             this, SLOT(audioBufferChanged(int)));
+
+    deviceSyncComboBox->clear();
+    deviceSyncComboBox->addItem(tr("Default (long delay)"));
+    deviceSyncComboBox->addItem(tr("Experimental (no delay)"));
+    deviceSyncComboBox->addItem(tr("Disabled (short delay)"));
+    deviceSyncComboBox->setCurrentIndex(2);
+    connect(deviceSyncComboBox, SIGNAL(currentIndexChanged(int)),
+            this, SLOT(syncBuffersChanged(int)));
 
     initializePaths();
     loadSettings();
@@ -75,15 +79,15 @@ DlgPrefSound::DlgPrefSound(QWidget* pParent, SoundManager* pSoundManager,
             this, SLOT(settingChanged()));
     connect(audioBufferComboBox, SIGNAL(currentIndexChanged(int)),
             this, SLOT(settingChanged()));
+    connect(deviceSyncComboBox, SIGNAL(currentIndexChanged(int)),
+            this, SLOT(settingChanged()));
 
     connect(queryButton, SIGNAL(clicked()),
             this, SLOT(queryClicked()));
-    connect(resetButton, SIGNAL(clicked()),
-            this, SLOT(resetClicked()));
 
-    connect(m_pSoundManager, SIGNAL(outputRegistered(AudioOutput, const AudioSource*)),
+    connect(m_pSoundManager, SIGNAL(outputRegistered(AudioOutput, AudioSource*)),
             this, SLOT(addPath(AudioOutput)));
-    connect(m_pSoundManager, SIGNAL(outputRegistered(AudioOutput, const AudioSource*)),
+    connect(m_pSoundManager, SIGNAL(outputRegistered(AudioOutput, AudioSource*)),
             this, SLOT(loadSettings()));
 
     connect(m_pSoundManager, SIGNAL(inputRegistered(AudioInput, AudioDestination*)),
@@ -92,14 +96,24 @@ DlgPrefSound::DlgPrefSound(QWidget* pParent, SoundManager* pSoundManager,
             this, SLOT(loadSettings()));
 
     m_pMasterUnderflowCount =
-                    new ControlObjectThread("[Master]", "underflow_count");
-    connect(m_pMasterUnderflowCount, SIGNAL(valueChanged(double)),
-            this, SLOT(bufferUnderflow(double)));
+            new ControlObjectSlave("[Master]", "underflow_count", this);
+    m_pMasterUnderflowCount->connectValueChanged(SLOT(bufferUnderflow(double)));
 
     m_pMasterLatency =
-                    new ControlObjectThread("[Master]", "latency");
-    connect(m_pMasterLatency, SIGNAL(valueChanged(double)),
-            this, SLOT(masterLatencyChanged(double)));
+            new ControlObjectSlave("[Master]", "latency", this);
+    m_pMasterLatency->connectValueChanged(SLOT(masterLatencyChanged(double)));
+
+
+    m_pHeadDelay =
+            new ControlObjectSlave("[Master]", "headDelay", this);
+    m_pMasterDelay =
+            new ControlObjectSlave("[Master]", "delay", this);
+
+    connect(headDelaySpinBox, SIGNAL(valueChanged(double)),
+            this, SLOT(headDelayChanged(double)));
+    connect(masterDelaySpinBox, SIGNAL(valueChanged(double)),
+            this, SLOT(masterDelayChanged(double)));
+
 
 #ifdef __LINUX__
     qDebug() << "RLimit Cur " << RLimit::getCurRtPrio();
@@ -116,8 +130,6 @@ DlgPrefSound::DlgPrefSound(QWidget* pParent, SoundManager* pSoundManager,
 }
 
 DlgPrefSound::~DlgPrefSound() {
-    delete m_pMasterUnderflowCount;
-    delete m_pMasterLatency;
 }
 
 /**
@@ -131,17 +143,15 @@ void DlgPrefSound::slotUpdate() {
     // for a prefs rewrite -- bkgood
     loadSettings();
     m_settingsModified = false;
-    applyButton->setEnabled(false);
 }
 
 /**
  * Slot called when the Apply or OK button is pressed.
  */
 void DlgPrefSound::slotApply() {
-    if (!m_settingsModified && !m_forceApply) {
+    if (!m_settingsModified) {
         return;
     }
-    m_forceApply = false;
     m_config.clearInputs();
     m_config.clearOutputs();
     emit(writePaths(&m_config));
@@ -152,32 +162,21 @@ void DlgPrefSound::slotApply() {
         QString detailedError(tr("An unknown error occurred"));
         SoundDevice *device = m_pSoundManager->getErrorDevice();
         if (device != NULL) {
-            deviceName = QString(tr("sound device \"%1\"")).arg(device->getDisplayName());
+            deviceName = tr("sound device \"%1\"").arg(device->getDisplayName());
             detailedError = device->getError();
         }
         switch (err) {
         case SOUNDDEVICE_ERROR_DUPLICATE_OUTPUT_CHANNEL:
-            error = QString(tr("Two outputs cannot share channels on %1")).arg(deviceName);
+            error = tr("Two outputs cannot share channels on %1").arg(deviceName);
             break;
         default:
-            error = QString(tr("Error opening %1\n%2")).arg(deviceName, detailedError);
+            error = tr("Error opening %1\n%2").arg(deviceName, detailedError);
             break;
         }
         QMessageBox::warning(NULL, tr("Configuration error"), error);
     }
     m_settingsModified = false;
-    applyButton->setEnabled(false);
     loadSettings(); // in case SM decided to change anything it didn't like
-}
-
-/**
- * Slot called by DlgPrefVinyl when it needs slotApply here to call setupDevices.
- * We're graced with this kludge because VC proxies are only initialized in
- * SoundManager::setupDevices and reinit is the only way to make them reread
- * their config.
- */
-void DlgPrefSound::forceApply() {
-    m_forceApply = true;
 }
 
 /**
@@ -320,6 +319,19 @@ void DlgPrefSound::loadSettings(const SoundManagerConfig &config) {
     if (sizeIndex != -1) {
         audioBufferComboBox->setCurrentIndex(sizeIndex);
     }
+
+    int syncBuffers = m_config.getSyncBuffers();
+    if (syncBuffers == 0) {
+        // "Experimental (no delay)"))
+        deviceSyncComboBox->setCurrentIndex(1);
+    } else if (syncBuffers == 1) {
+        // "Disabled (short delay)")) = 1 buffer
+        deviceSyncComboBox->setCurrentIndex(2);
+    } else {
+        // "Default (long delay)" = 2 buffer
+        deviceSyncComboBox->setCurrentIndex(0);
+    }
+
     emit(loadPaths(m_config));
     m_loading = false;
 }
@@ -381,6 +393,18 @@ void DlgPrefSound::audioBufferChanged(int index) {
             audioBufferComboBox->itemData(index).toUInt());
 }
 
+void DlgPrefSound::syncBuffersChanged(int index) {
+    if (index == 0) {
+        // "Default (long delay)" = 2 buffer
+        m_config.setSyncBuffers(2);
+    } else if (index == 1) {
+        // "Experimental (no delay)")) = 0 buffer
+        m_config.setSyncBuffers(0);
+    } else {
+        // "Disabled (short delay)")) = 1 buffer
+        m_config.setSyncBuffers(1);
+    }
+}
 
 // Slot called whenever the selected sample rate is changed. Populates the
 // audio buffer input box with SMConfig::kMaxLatency values, starting at 1ms,
@@ -402,7 +426,7 @@ void DlgPrefSound::updateAudioBufferSizes(int sampleRateIndex) {
     for (unsigned int i = 0; i < SoundManagerConfig::kMaxAudioBufferSizeIndex; ++i) {
         float latency = framesPerBuffer / sampleRate * 1000;
         // i + 1 in the next line is a latency index as described in SSConfig
-        audioBufferComboBox->addItem(QString(tr("%1 ms")).arg(latency,0,'g',3), i + 1);
+        audioBufferComboBox->addItem(tr("%1 ms").arg(latency,0,'g',3), i + 1);
         framesPerBuffer <<= 1; // *= 2
     }
     if (oldSizeIndex < audioBufferComboBox->count() && oldSizeIndex >= 0) {
@@ -441,9 +465,6 @@ void DlgPrefSound::refreshDevices() {
 void DlgPrefSound::settingChanged() {
     if (m_loading) return; // doesn't count if we're just loading prefs
     m_settingsModified = true;
-    if (!applyButton->isEnabled()) {
-        applyButton->setEnabled(true);
-    }
 }
 
 /**
@@ -457,7 +478,7 @@ void DlgPrefSound::queryClicked() {
 /**
  * Slot called when the "Reset to Defaults" button is clicked.
  */
-void DlgPrefSound::resetClicked() {
+void DlgPrefSound::slotResetToDefaults() {
     SoundManagerConfig newConfig;
     newConfig.loadDefaults(m_pSoundManager, SoundManagerConfig::ALL);
     loadSettings(newConfig);
@@ -472,4 +493,12 @@ void DlgPrefSound::bufferUnderflow(double count) {
 void DlgPrefSound::masterLatencyChanged(double latency) {
     currentLatency->setText(QString("%1 ms").arg(latency));
     update();
+}
+
+void DlgPrefSound::headDelayChanged(double value) {
+    m_pHeadDelay->set(value);
+}
+
+void DlgPrefSound::masterDelayChanged(double value) {
+    m_pMasterDelay->set(value);
 }
